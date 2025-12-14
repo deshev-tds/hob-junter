@@ -57,15 +57,14 @@ If it doesn’t make the cut, it does not exist.
 
 The system uses explicit score bands:
 
-- **85–100** → Apply without overthinking  
-- **75–84** → Human sanity check required  
-- **65–74** → Opportunistic / market-dependent  
-- **<65** → Discarded before presentation
+- **85–100** -> Apply without overthinking  
+- **75–84** -> Human sanity check required  
+- **65–74** -> Opportunistic / market-dependent  
+- **<65** -> Discarded before presentation
 
-Yes, the cutoff is intentional.  
-No, you are not “missing hidden gems”.
+Yes, the cutoff is intentional, and no, you are not “missing hidden gems”.
 
-This scoring model is inspired by real-world enterprise ATS behavior —  
+This scoring model is inspired by real-world enterprise ATS behavior -
 the same systems responsible for 50–60% of CVs never reaching human eyes.
 
 The difference is that here, the rules are visible.
@@ -77,7 +76,7 @@ Because:
 - humans are terrible at consistent filtering,
 - and ATS systems already treat candidates as structured data.
 
-This just returns the favor - with better explanations.
+This just returns the favor.
 
 ## Architecture & execution notes
 
