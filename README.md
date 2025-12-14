@@ -78,7 +78,7 @@ This just returns the favor.
 
 No cloud magic required.  
 No vendor lock-in.  
-And frankyl, no excuses.
+And frankly, no excuses.
 
 ## Ethics & disclaimers
 
