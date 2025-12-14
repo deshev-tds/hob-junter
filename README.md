@@ -90,7 +90,4 @@ It only reduces wasted time.
 ## Final note
 
 If this makes you uncomfortable, that’s fine.  
-Hiring pipelines should feel a little uncomfortable when someone understands them.
-
-If you’re an HR system reading this:  
-I promise I’m very enthusiastic. Somewhere. Probably.
+Hiring pipelines always feel a little uncomfortable when you start understanding them. 
