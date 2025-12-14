@@ -1,8 +1,6 @@
 # Hob Junter  
 (ATS-flavored, mildly hostile)
 
-This is not a startup.  
-This is not a product.  
 This exists because manually browsing job boards is a form of quiet self-harm.
 
 ## What this is
