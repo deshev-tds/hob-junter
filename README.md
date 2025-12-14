@@ -1,93 +1,114 @@
 # Hob Junter  
 (ATS-flavored, mildly hostile)
 
-This exists because manually browsing job boards is a form of quiet self-harm.
+This exists because manually browsing job boards is a form of quiet, socially accepted self-harm.
 
 ## What this is
 
-**Hob Junter** is a personal, ATS-style job matching tool that:
+**Hob Junter** is a personal, ATS-style job matching system that:
 
 - pulls job listings from job boards (currently hiring.cafe),
-- scores them against a CV,
-- filters out obvious nonsense,
-- and shows only roles that are statistically worth applying to.
+- normalizes and deduplicates them,
+- scores them against a CV using a local LLM,
+- aggressively filters out low-signal roles,
+- and exposes only jobs that are statistically worth attention.
 
-No motivation letters.  
-No “culture fit” astrology.  
-No pretending this is a numbers-free process.
+Finding a new job is not a vibes and giigle process, it's a numbers (and data, and some intuition...) process. This tools does only: 
 
-Just:
 - scores,
 - reasons,
-- and direct apply links.
+- and produces direct apply links.
 
 ## What this is not
 
-- Not a SaaS AI mega-startup that will 100% GET YOU HIRED OR YOU GET YOUR MONEY BACK ($99.92/year).
-- Not a replacement for recruiters or career consultants.
-- Not a promise that you’ll get hired - just a nudge in a possibly different direction.
+- Not a SaaS AI mega-startup that will 100% GET YOU HIRED OR YOUR MONEY BACK ($99.99/year).
+- Not a replacement for recruiters, HR, or career consultants.
+- Not a promise of interviews.
 - Not polite.
-- Not beautifully written, just functional for now. 
+- Not optimized for feelings (I honestly tried - didn't work).
 
 It will absolutely tell you:
 > “This role wants Python, finance, and marketing analytics. You have none of that. Move on.”
 
-## How it works (the non-marketing version)
+And it will do so calmly and consistently.
 
-1. A search URL is constructed for hiring.cafe  
-   (job titles + keywords + mild optimism). Currently done manually, it's fairly easy to contruct it from keywords from the CV. I'm ~12 coffees away from implementing it. 
-2. Job listings are fetched and normalized.
-3. A local LLM evaluates each role against a CV. Option included to pass your OPENAI_API_TOKEN as an anv. variable and ask the script to go nag Sam Altman instead of your own GPU. 
-4. Each role gets:
-   - a score (0–100),
-   - a short explanation of the score.
-5. Anything below a configurable threshold is dropped **before** it wastes attention. Default is 65, you can change it in inputs.json
+## How it works (non-marketing version)
 
-If it doesn’t make the cut, it doesn’t exist.
+1. A search URL is constructed for hiring.cafe (they are the LAST cool place for folks looking to change careers. Please love them and use this type of tools sparingly <3 )
+   (job titles + keywords + mild optimism).  
+   Currently this can be provided manually. Also, extracting keywords directly from the CV is tested and confirmed as working - if you don't provide a url in the json file, you will be asked questions interactively so it is constructed live for you.
+   You also get a "bonus" review of your CV and GPT pings you back in the terminal, suggesting what roles to apply to have better chances. You can either listen to it, or list your own in the interactive prompt. Those will be used to construct the job aggregator URL correctly. 
+
+3. Job listings are fetched, normalized, and deduplicated.
+
+4. Each role is evaluated against a CV using a **local LLM**.  
+   Optionally, you can pass an `OPENAI_API_KEY` and ask the script to bother Sam Altman instead of your own GPU.
+
+5. Each job receives:
+   - a numeric score (0–100),
+   - a short, explicit justification explaining the score.
+
+6. Anything below a hard threshold is discarded **before** it reaches the UI.  
+   The default cutoff is **65**, configurable via `inputs.json`.
+
+If it doesn’t make the cut, it does not exist.
 
 ## Scoring philosophy
 
+The system uses explicit score bands:
+
 - **85–100** → Apply without overthinking  
-- **75–84** → Human sanity check  
+- **75–84** → Human sanity check required  
 - **65–74** → Opportunistic / market-dependent  
-- **<65** → Not even shown
+- **<65** → Discarded before presentation
 
 Yes, the cutoff is intentional.  
 No, you are not “missing hidden gems”.
 
-Scoring is "borrowed" from real-world enterprise ATS (Aplicant Tracking Systems) - the same things that make it so that 60% of your CVs are never seen by human eyes. 
+This scoring model is inspired by real-world enterprise ATS behavior —  
+the same systems responsible for 50–60% of CVs never reaching human eyes.
+
+The difference is that here, the rules are visible.
 
 ## Why this exists
 
 Because:
-- job searching is a volume game,
-- humans are bad at consistent filtering,
-- and ATS systems already treat candidates like structured data.
+- job searching is a numbers game,
+- humans are terrible at consistent filtering,
+- and ATS systems already treat candidates as structured data.
 
-This just returns the favor.
+This just returns the favor - with better explanations.
 
-## Tech notes (brief and honest)
+## Architecture & execution notes
 
-- Python
-- Local LLM (tested with Mixtral 8x7B variants - tried gemma 27b, but she was OVERLY polite and scored eveything 95-100...)
-- Static HTML output
-- Designed to run attended - a headful playwright browser is launched to overcome some... Things. If you know, you know.  
-- Designed to be boring and reliable
+- Python-based pipeline
+- Local LLMs tested primarily with **Mixtral 8x7B variants**  
+  (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
+- You can switch to OpenAI for analysis so you hog Sam Altman's GPUs and not yours (change to "scoring_mode": "openai" in inputs.json). 
+- Static HTML output for review and decision-making
+- Designed to run **attended**
+- Uses a **headful Playwright browser** when required to deal with real-world content delivery quirks  
+  (If you know, you know.)
 
-No cloud magic required.  
-No vendor lock-in.  
-And frankly, no excuses.
+This is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
+
+The system favors:
+- predictability over cleverness
+- explicit thresholds over vague “fit”
+- boring reliability over architectural purity
+
+No cloud magic required (except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model. 
 
 ## Ethics & disclaimers
 
 - This does not auto-apply anywhere.
-- This does not scrape private data.
+- This does not scrape private or authenticated data.
 - This does not guarantee interviews.
 - This does not pretend hiring is fair.
 
-It only reduces wasted time.
+It only reduces wasted time and cognitive load.
 
 ## Final note
 
 If this makes you uncomfortable, that’s fine.  
-Hiring pipelines always feel a little uncomfortable when you start understanding them. 
+Hiring pipelines *should* feel a little uncomfortable when you start understanding them.
