@@ -50,12 +50,40 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-OPENAI_MODEL = "gpt-5.1" # Adjust if needed, e.g. gpt-4o
+OPENAI_MODEL = "gpt-5.1" # Adjust if needed
 CONFIG_FILE = "inputs.json"
 DEBUG = os.getenv("DEBUG", "").lower() in ("1", "true", "yes", "on")
 DEFAULT_CV_PROFILE_PATH = "cv_profile.json"
 
 OCR_PROMPT_DEFAULT = "Extract all human-readable text from this PDF. No formatting, no comments, no summary. Return ONLY the plain text content of the CV."
+
+# --- NEW: STRATEGY PROMPT WITH EXPLICIT TECH DETECTION ---
+STRATEGY_PROMPT = """You are an elite Executive Headhunter and Career Strategist.
+Analyze the candidate's CV text below. 
+
+1. Classify the candidate's PRIMARY TARGET INDUSTRY (e.g. "Technology", "Finance", "Healthcare", "Manufacturing").
+2. Determine if the target roles fall under "Information Technology", "Software Engineering", "Data", or "Product" (Tech). Set 'is_tech_industry' to true if yes.
+3. Identify the 3-5 Highest Probability Job Titles this candidate should target.
+
+OUTPUT REQUIREMENTS:
+- Return STRICT JSON format.
+- Structure: 
+{
+  "industry": "Industry Name",
+  "is_tech_industry": true, 
+  "suggestions": [ 
+    { "role": "Exact Job Title", "reason": "Why this fits" } 
+  ]
+}
+
+- "industry": Be specific.
+- "is_tech_industry": Boolean. True ONLY if the role requires technical filters (Engineering/IT/Data departments).
+- "role": Must be a specific, searchable job title.
+- "reason": A brief, punchy explanation.
+
+CV TEXT:
+\"\"\"{cv_text}\"\"\"
+"""
 
 PROFILE_PROMPT_DEFAULT = """Extract a structured, ATS-oriented candidate profile from the CV text.
 
@@ -83,7 +111,7 @@ EXTRACTION GUIDELINES (VERY IMPORTANT):
 FIELD-SPECIFIC RULES:
 
 summary:
-- 2–4 sentences maximum.
+- 2-4 sentences maximum.
 - Focus on seniority level, domains, scale, and leadership scope.
 - Avoid generic adjectives.
 
@@ -106,8 +134,7 @@ Each item must include ONLY information explicitly present in the CV:
 - Do NOT summarize away numbers or scale.
 
 preferred_roles[]:
-- Include ONLY roles explicitly stated or clearly implied by recent titles.
-- Do NOT add aspirational roles.
+- Include ONLY specific, searchable job titles.
 
 locations[]:
 - Include explicit locations and remote eligibility ONLY if stated.
@@ -128,6 +155,7 @@ CV TEXT:
 
 
 SCORE_PROMPT_DEFAULT = """You are an enterprise-grade Talent Intelligence Engine designed for objective candidate assessment.
+The job of the candidate is to prove to you that they are a match with the job description provided. Yours is to evaluate that match fairly and strictly based on EVIDENTIARY SUPPORT from the candidate profile.
 
 Your task is to assess whether this candidate would realistically PASS or FAIL the screening stage for THIS specific job.
 
@@ -147,6 +175,7 @@ PHASE 2: CORE COMPETENCY & PROXY SKILLS
   * Valid Proxy: "Founder of Cybersecurity Firm" IS A PROXY FOR "Security Management" and "Pre-sales".
   * Invalid Proxy: "Software Engineer" IS NOT A PROXY FOR "IT Auditor" or "Finance Manager".
 - If 2+ Mandatory Skills are missing with NO valid proxies -> Apply significant penalty.
+- If there is an inferred industry/domain match (e.g., Banking, Healthcare, Gaming) -> Consider as a strong positive signal.
 
 PHASE 3: SENIORITY & ARCHETYPE ALIGNMENT
 - Overqualification Logic:
@@ -220,8 +249,7 @@ def load_run_parameters():
 
     if not cv_path:
         cv_path = input("Path to CV PDF: ").strip()
-    if not search_url:
-        search_url = input("Hiring.cafe Search URL: ").strip()
+    # Note: We allow search_url to be empty now to trigger auto-generation
     if not spreadsheet_id:
         spreadsheet_id = input("Google Sheet ID: ").strip()
     if threshold is None or threshold == "":
@@ -391,7 +419,8 @@ def save_cv_profile_to_file(profile_json: str, path: str):
 
 
 def build_cv_profile(cv_text: str, profile_prompt: str) -> str:
-    prompt = profile_prompt.format(cv_text=cv_text[:20000])
+    # Avoid .format() on JSON templates with braces; just replace the single token.
+    prompt = profile_prompt.replace("{cv_text}", cv_text[:20000])
 
     resp = with_retries(
         lambda: client.chat.completions.create(
@@ -443,6 +472,174 @@ class JobRecord:
 
         return JobRecord(job, job_id, title, company, apply_url, source_url, job.get("description", ""))
 
+# ==========================================
+# DYNAMIC URL CONSTRUCTION & ADVISORY
+# ==========================================
+
+def consult_career_advisor_gpt(cv_text: str) -> Dict[str, Any]:
+    """
+    Asks the LLM for strategic role advice AND Industry classification.
+    Returns: { "industry": str, "is_tech_industry": bool, "suggestions": [...] }
+    """
+    prompt = STRATEGY_PROMPT.replace("{cv_text}", cv_text[:20000])
+
+    print("[Advisor] Consulting GPT for strategic role targeting & industry...")
+    resp = with_retries(
+        lambda: client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are an executive career strategist."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4, 
+            response_format={"type": "json_object"},
+        )
+    )
+
+    content = resp.choices[0].message.content
+    try:
+        return json.loads(content)
+    except Exception as e:
+        print(f"[Advisor] Error parsing strategy response: {e}")
+        return {}
+
+def select_roles_interactive(ai_suggestions: List[Dict[str, str]]) -> List[str]:
+    """
+    Displays AI suggestions with reasoning and allows user to select/add roles.
+    """
+    if not ai_suggestions:
+        print("[Advisor] AI returned no suggestions.")
+        return []
+
+    print("\n" + "="*60)
+    print(" CAREER STRATEGY ADVISOR (GPT)")
+    print("="*60)
+    print("Based on your CV, I recommend targeting these roles:\n")
+    
+    for i, item in enumerate(ai_suggestions):
+        role = item.get('role', 'Unknown')
+        reason = item.get('reason', 'No reason provided')
+        print(f" [{i+1}] {role}")
+        print(f"     -> {reason}")
+        print("-" * 40)
+    
+    print("\nACTIONS:")
+    print(" - Enter numbers to SELECT (e.g. '1, 3')")
+    print(" - Press ENTER to select ALL recommended roles")
+    print(" - Type text to ADD custom roles (comma separated)")
+    
+    user_input = input("\nYour Choice > ").strip()
+    
+    final_roles = []
+    
+    # 1. Parse Selections vs Text
+    if not user_input:
+        print("[Config] Selected ALL recommended roles.")
+        return [x['role'] for x in ai_suggestions]
+
+    parts = [p.strip() for p in user_input.split(",")]
+    custom_roles = []
+    
+    for p in parts:
+        if p.isdigit():
+            idx = int(p) - 1
+            if 0 <= idx < len(ai_suggestions):
+                final_roles.append(ai_suggestions[idx]['role'])
+        else:
+            if p:
+                custom_roles.append(p)
+                final_roles.append(p)
+    
+    # Warning for custom roles
+    if custom_roles:
+        print("\n" + "!"*60)
+        print(" WARNING: YOU ADDED CUSTOM ROLES")
+        print(f" Added: {', '.join(custom_roles)}")
+        print(" Manually adding roles usually DECREASES the signal-to-noise ratio.")
+        print(" The system works best when you trust the AI's functional matching.")
+        print("!"*60 + "\n")
+        time.sleep(1.5) 
+
+    final_roles = list(set(final_roles))
+    
+    print(f"[Config] Final Search List: {', '.join(final_roles)}")
+    return final_roles
+
+def input_exclusions_interactive() -> List[str]:
+    """
+    Asks the user for keywords to EXCLUDE from the search (NOT clause).
+    """
+    print("\n" + "="*60)
+    print(" EXCLUSION PROTOCOL (Signal-to-Noise Filter)")
+    print("="*60)
+    print("Enter keywords to explicitly EXCLUDE from search results.")
+    print("Useful for: 'Intern', 'Junior', 'Support', 'Wordpress', 'Sales', etc.")
+    print("Leave empty to skip.")
+    
+    user_input = input("\nExclude Keywords (comma separated) > ").strip()
+    
+    if not user_input:
+        return []
+    
+    exclusions = [x.strip() for x in user_input.split(",") if x.strip()]
+    if exclusions:
+        print(f"[Config] Adding NOT clauses for: {', '.join(exclusions)}")
+    
+    return exclusions
+
+
+def construct_search_url(roles: List[str], locations: List[str], is_tech_industry: bool, exclusions: List[str] = None) -> str:
+    """
+    Constructs a hiring.cafe URL based on explicit list of roles.
+    Applies IT Department filters ONLY if is_tech_industry is True.
+    Applies Negative (NOT) clauses for exclusions.
+    """
+    if not roles:
+        print("[Config] No roles provided to build URL.")
+        return ""
+
+    # 1. Initialize Search State
+    search_state = {}
+
+    # 2. Apply IT Skeleton if Model confirmed it is a Tech industry
+    if is_tech_industry:
+        print(f"[Config] Tech industry detected by AI. Applying IT Skeleton filters.")
+        search_state["departments"] = [
+            "Engineering",
+            "Software Development",
+            "Information Technology",
+            "Data and Analytics"
+        ]
+    else:
+        print(f"[Config] Non-Tech industry detected. Skipping IT Skeleton filters.")
+
+    # 3. Clean and Quote Roles for Exact Match
+    cleaned_roles = [f'\\"{r.strip()}\\"' for r in roles if r.strip()]
+    if not cleaned_roles:
+        return ""
+
+    # 4. Build the Positive Query String
+    query_string = f"({' OR '.join(cleaned_roles)})"
+    
+    # 5. Apply Negative Clauses (Exclusions)
+    if exclusions:
+        # Format: (Role A OR Role B) NOT "Exclude A" NOT "Exclude B"
+        # We quote them to be safe (e.g. NOT "Tech Support")
+        negative_clauses = [f'NOT \\"{e}\\"' for e in exclusions]
+        query_string = f"{query_string} {' '.join(negative_clauses)}"
+
+    search_state["jobTitleQuery"] = query_string
+    
+    # 6. Handle Remote/Location (Optional)
+    locs_lower = [loc.lower() for loc in locations]
+    if any("remote" in l for l in locs_lower):
+        search_state["remote"] = "Remote"
+
+    # 7. Encode
+    json_str = json.dumps(search_state)
+    encoded_state = urllib.parse.quote(json_str)
+    
+    return f"{HIRING_BASE}/?searchState={encoded_state}"
 
 # ==========================================
 # PLAYWRIGHT & SCRAPING LOGIC
@@ -707,13 +904,16 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
         "job_description": (job.description or "")[:15000],
     }
     
-    # FIX: Use direct string replacement
+    # Use direct string replacement
     prompt = score_prompt
     for key, val in template_vars.items():
         prompt = prompt.replace("{" + key + "}", str(val))
     
     print(f"[SCORING] Sending {job.company} - {job.title}...", flush=True)
     try:
+        content = ""
+        
+        # --- OPENAI MODE ---
         if scoring_mode == "openai":
             resp = client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -722,21 +922,17 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
                         "role": "system",
                         "content": (
                             "You are an enterprise-grade Talent Intelligence Engine designed for objective candidate assessment.\n"
-                            "Your role is to strictly evaluate the candidate's provided profile against the job description based on EVIDENTIARY SUPPORT.\n"
-                            "OPERATIONAL STANDARDS:\n"
-                            "1. EVIDENCE OVER INFERENCE: Do not credit skills unless they are explicitly stated or strongly implied by context (e.g., 'React' implies 'JavaScript').\n"
-                            "2. FUNCTIONAL MATCHING: Prioritize the *nature* of the work (e.g., Strategic vs. Execution, Engineering vs. Sales) over exact keyword matches.\n"
-                            "3. SENIORITY CONTEXT: Recognize that senior leaders (Founders, Directors) possess high-level strategic skills that supersede specific IC tool requirements, provided the Core Domain matches.\n"
-                            "4. NEUTRALITY: Do not penalize for formatting, gaps, or non-standard career paths unless they directly impact job qualification.\n"
                             "Output STRICT JSON ONLY."
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.0,
-                max_tokens=512,
+                max_completion_tokens=512,
             )
             content = resp.choices[0].message.content if resp and resp.choices else ""
+
+        # --- LOCAL MODE (FIXED) ---
         else:
             resp = requests.post(
                 LOCAL_LLM_URL,
@@ -747,12 +943,6 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
                             "role": "system",
                             "content": (
                                 "You are an enterprise-grade Talent Intelligence Engine designed for objective candidate assessment.\n"
-                                "Your role is to strictly evaluate the candidate's provided profile against the job description based on EVIDENTIARY SUPPORT.\n"
-                                "OPERATIONAL STANDARDS:\n"
-                                "1. EVIDENCE OVER INFERENCE: Do not credit skills unless they are explicitly stated or strongly implied by context (e.g., 'React' implies 'JavaScript').\n"
-                                "2. FUNCTIONAL MATCHING: Prioritize the *nature* of the work (e.g., Strategic vs. Execution, Engineering vs. Sales) over exact keyword matches.\n"
-                                "3. SENIORITY CONTEXT: Recognize that senior leaders (Founders, Directors) possess high-level strategic skills that supersede specific IC tool requirements, provided the Core Domain matches.\n"
-                                "4. NEUTRALITY: Do not penalize for formatting, gaps, or non-standard career paths unless they directly impact job qualification.\n"
                                 "Output STRICT JSON ONLY."
                             )
                         },
@@ -766,18 +956,29 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
                 },
                 timeout=120,
             )
+            
             if resp.status_code != 200:
                 print(f"[SCORING] API Error: {resp.status_code} {resp.text}")
                 return 0, "API Error"
-            content = resp.text
+            
+            # FIX: Parse the API JSON first to get the content string
+            try:
+                api_response = resp.json()
+                content = api_response['choices'][0]['message']['content']
+            except (KeyError, ValueError, IndexError):
+                # Fallback: Maybe the server returned raw text?
+                content = resp.text
 
-        # Clean markdown code blocks
+        # --- COMMON PARSING LOGIC ---
+        # 1. Clean markdown code blocks (e.g. ```json ... ```)
         if "```" in content:
             match = re.search(r"```(?:json)?(.*?)```", content, re.DOTALL)
             if match:
                 content = match.group(1).strip()
             
+        # 2. Parse the actual score JSON
         result = safe_json_loads(content)
+        
         return int(result.get("score", 0)), str(result.get("reason", "No reason provided"))
 
     except Exception as exc:
@@ -815,7 +1016,7 @@ def summarize_jobs(jobs_with_scores):
     sorted_jobs = sorted(jobs_with_scores, key=lambda x: x[1], reverse=True)
     
     for job, score, reason in sorted_jobs[:10]:
-        msg += f"\n🔥 {score}/100 — {job.title} @ {job.company}\n🔗 {job.apply_url}\n📝 {reason[:100]}...\n"
+        msg += f"\n {score}/100 - {job.title} @ {job.company}\nLink: {job.apply_url}\nReason: {reason[:100]}...\n"
     
     if len(sorted_jobs) > 10:
         msg += f"\n...and {len(sorted_jobs)-10} more in the HTML report."
@@ -922,9 +1123,9 @@ async def main():
     with open(report_filename, "w") as f:
         f.write(f"<html><body><h1>Job Search Started: {timestamp}</h1><p>Waiting for matches...</p></body></html>")
 
-    # Step 1 — OCR the CV
+    # Step 1 - OCR the CV
     if cv_path.lower().endswith(".json"):
-        print("[CV] Loading structured profile from JSON file…")
+        print("[CV] Loading structured profile from JSON file...")
         cv_profile_json = load_cv_profile_from_json(cv_path)
     else:
         # Check if cache exists AND is newer than the PDF
@@ -951,14 +1152,50 @@ async def main():
             cv_profile_json = build_cv_profile(cv_text, profile_prompt)
             save_cv_profile_to_file(cv_profile_json, cv_profile_path)
     
-    # Step 2 — Parse URL
+    # Convert string JSON to Dict for URL construction
+    cv_profile_data = json.loads(cv_profile_json)
+    
+    # NEW STEP: Interactive Strategy
+    if not search_url:
+        print("\n[Advisor] Initializing strategic analysis...")
+        # Note: We need the RAW text for strategy, but if we loaded from JSON cache, we might not have it.
+        # Fallback: Dump the JSON profile back to text if raw text is missing.
+        if 'cv_text' not in locals():
+            cv_text_for_strategy = json.dumps(cv_profile_data, indent=2)
+        else:
+            cv_text_for_strategy = cv_text
+
+        advisor_response = consult_career_advisor_gpt(cv_text_for_strategy)
+        
+        # EXTRACT INDUSTRY & SUGGESTIONS
+        ai_suggestions = advisor_response.get("suggestions", [])
+        industry = advisor_response.get("industry", "Unknown")
+        is_tech_industry = advisor_response.get("is_tech_industry", False)
+        
+        print(f"\n[Advisor] Detected Industry: {industry}")
+        print(f"[Advisor] Tech/IT Filters: {'ON' if is_tech_industry else 'OFF'}")
+        
+        final_roles = select_roles_interactive(ai_suggestions)
+        
+        # NEW: EXCLUSION PROTOCOL
+        final_exclusions = input_exclusions_interactive()
+        
+        # PASS THE is_tech_industry FLAG
+        search_url = construct_search_url(final_roles, cv_profile_data.get("locations", []), is_tech_industry, final_exclusions)
+        print(f"[Config] Generated URL: {search_url}")
+        
+        if not search_url:
+            print("[Error] Could not generate URL. Exiting.")
+            return
+
+    # Step 2 - Parse URL
     try:
         search_state = parse_hiring_cafe_search_state_from_url(search_url)
     except Exception as e:
         print(f"[Error] Invalid URL: {e}")
         return
 
-    # Step 3 — Scrape Jobs
+    # Step 3 - Scrape Jobs
     print("[Hiring] Starting browser automation...")
     jobs = await fetch_jobs_via_browser(search_state)
     
@@ -968,7 +1205,7 @@ async def main():
 
     print(f"[Pipeline] Processing {len(jobs)} jobs for scoring...")
 
-    # Step 4 — Score Jobs (WITH INCREMENTAL SAVING)
+    # Step 4 - Score Jobs (WITH INCREMENTAL SAVING)
     scored = []
     
     # Pre-filter: only fetch/score jobs that actually have data
@@ -993,7 +1230,7 @@ async def main():
                 
     print("\n[Pipeline] Scoring complete.")
 
-    # Step 5 — Final Report
+    # Step 5 - Final Report
     good_matches = [(j, s, r) for (j, s, r) in scored if s >= threshold]
     
     print(f"[Pipeline] Found {len(good_matches)} jobs above threshold {threshold}.")
