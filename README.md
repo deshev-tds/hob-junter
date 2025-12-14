@@ -35,7 +35,7 @@ It will absolutely tell you:
 ## How it works (the non-marketing version)
 
 1. A search URL is constructed for hiring.cafe  
-   (job titles + keywords + mild optimism). Currently done manually, it's fairly easy to contruct it from keywords from the CV. I'm ~12 coffees away from it. 
+   (job titles + keywords + mild optimism). Currently done manually, it's fairly easy to contruct it from keywords from the CV. I'm ~12 coffees away from implementing it. 
 2. Job listings are fetched and normalized.
 3. A local LLM evaluates each role against a CV. Option included to pass your OPENAI_API_TOKEN as an anv. variable and ask the script to go nag Sam Altman instead of your own GPU. 
 4. Each role gets:
