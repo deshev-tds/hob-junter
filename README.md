@@ -119,6 +119,8 @@ If you want to run the *scoring* locally (which is the intended use case):
 3. Start the local server on port `1234` (standard for LM Studio).
 4. In `inputs.json` (created on first run), ensure `"scoring_mode": "local"`.
 
+If not, the script is currently setup to use opanai instead anyway(in the json -> scoring_mode: "openai"). 
+
 ### 4. Execution
 ```bash
 python hob-junter.py
