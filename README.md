@@ -1,4 +1,4 @@
-# Job Hunter  
+# Hob Junter  
 (ATS-flavored, mildly hostile)
 
 This is not a startup.  
@@ -7,7 +7,7 @@ This exists because manually browsing job boards is a form of quiet self-harm.
 
 ## What this is
 
-**Job Hunter** is a personal, ATS-style job matching tool that:
+**Hob Junter** is a personal, ATS-style job matching tool that:
 
 - pulls job listings from job boards (currently hiring.cafe),
 - scores them against a CV,
