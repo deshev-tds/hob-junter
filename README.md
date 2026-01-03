@@ -24,6 +24,7 @@ How to use now:
 3) `python main.py` (uses Playwright to scrape hiring.cafe, then scores/report).  
 
 
+
 **Create a small SQLIte DB to keep your applications state**
 
 1.  **DB Initialization:**
