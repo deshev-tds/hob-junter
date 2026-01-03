@@ -171,8 +171,8 @@ class SheetsClient:
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-            elif os.path.exists('credentials.json'):
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            elif os.path.exists('../../Downloads/google_credentials.json'):
+                flow = InstalledAppFlow.from_client_secrets_file('../../Downloads/google_credentials.json', SCOPES)
                 creds = flow.run_local_server(port=0)
             else:
                 return # No auth possible
@@ -349,7 +349,7 @@ class HobJunterEngine:
             response_format={"type": "json_object"}
         )
         with open(PROFILE_FILE, "w") as f: json.dump(json.loads(resp.choices[0].message.content), f, indent=2)
-        print(f"\n🛑 STOP! Verify {PROFILE_FILE} manually. Restart required.")
+        print(f"\n STOP! Verify {PROFILE_FILE} manually. Restart required.")
         sys.exit(0)
 
     def sniper_hunt(self):
@@ -452,7 +452,7 @@ class HobJunterEngine:
                         
                         # 2. PUSH TO TELEGRAM (Only High Value)
                         if self.telegram and score >= 85:
-                            msg = f"🔥 <b>{score} - {title}</b>\n{company}\n<a href='{lead['url']}'>Apply Now</a>"
+                            msg = f" <b>{score} - {title}</b>\n{company}\n<a href='{lead['url']}'>Apply Now</a>"
                             self.telegram.send(msg)
 
                         # 3. PUSH TO SHEETS (All accepted)
