@@ -111,42 +111,65 @@ def input_exclusions_interactive() -> List[str]:
     return exclusions
 
 
-def construct_search_url(
-    roles: List[str], locations: List[str], is_tech_industry: bool, exclusions: List[str] = None
-) -> str:
-    if not roles:
-        print("[Config] No roles provided to build URL.")
-        return ""
+def construct_search_url(roles, locations, is_tech, exclusions):
+    import json
+    import urllib.parse
 
-    search_state = {}
-    if is_tech_industry:
-        search_state["departments"] = [
-            "Engineering",
-            "Software Development",
-            "Information Technology",
-            "Data and Analytics",
-        ]
+    # 1. Base Logic for Departments
+    departments = [
+        "Engineering",
+        "Software Development",
+        "Information Technology",
+        "Data and Analytics"
+    ] if is_tech else []
 
-    cleaned_roles = [f'\\"{r.strip()}\\"' for r in roles if r.strip()]
-    if not cleaned_roles:
-        return ""
-
-    query_string = f"({' OR '.join(cleaned_roles)})"
+    # 2. Build Query String (Roles + Exclusions)
+    # ... (тази част си е ок) ...
+    role_queries = [f'\\"{r}\\"' for r in roles]
+    query_parts = " OR ".join(role_queries)
+    full_query = f"({query_parts})"
 
     if exclusions:
-        negative_clauses = [f'NOT \\"{e}\\"' for e in exclusions]
-        query_string = f"{query_string} {' '.join(negative_clauses)}"
+        # Fix: Ensure exclusions are properly formatted
+        excl_list = [f'NOT \\"{e.strip()}\\"' for e in exclusions.split(",") if e.strip()]
+        if excl_list:
+            full_query += " " + " ".join(excl_list)
 
-    search_state["jobTitleQuery"] = query_string
+    # 3. FORCE BULGARIA LOCATION OBJECT
+    # Това е обектът, който Hiring.Cafe очаква за "Bulgaria"
+    bulgaria_location = {
+        "id": "QxY1yZQBoEtHp_8UEq3V",
+        "types": ["country"],
+        "address_components": [
+            {
+                "long_name": "Bulgaria",
+                "short_name": "BG",
+                "types": ["country"]
+            }
+        ],
+        "formatted_address": "Bulgaria",
+        "population": 7000039,
+        "workplace_types": [],
+        "options": {
+            "flexible_regions": ["anywhere_in_continent", "anywhere_in_world"]
+        }
+    }
+    
+    # Винаги слагаме България, независимо какво казва CV-то
+    final_locations = [bulgaria_location]
 
-    locs_lower = [loc.lower() for loc in locations]
-    if any("remote" in l for l in locs_lower):
-        search_state["remote"] = "Remote"
+    # 4. Construct State
+    state = {
+        "departments": departments,
+        "jobTitleQuery": full_query,
+        "locations": final_locations  # <--- Ето тук подаваме хардкоднатия обект
+    }
 
-    json_str = json.dumps(search_state)
-    encoded_state = urllib.parse.quote(json_str)
-
-    return f"{HIRING_BASE}/?searchState={encoded_state}"
+    # 5. Encode
+    json_str = json.dumps(state)
+    encoded = urllib.parse.quote(json_str)
+    
+    return f"https://hiring.cafe/?searchState={encoded}"
 
 
 def parse_hiring_cafe_search_state_from_url(url: str) -> Dict[str, Any]:
