@@ -16,6 +16,7 @@ OPENAI_MODEL = "gpt-4o"
 CONFIG_FILE = "inputs.json"
 DEFAULT_CV_PROFILE_PATH = "cv_profile.json"
 DEFAULT_CV_TEXT_PATH = "cv_full_text.txt"
+DEFAULT_DB_PATH = "jobs.db"
 
 
 def _env_flag(name: str) -> bool:
@@ -41,6 +42,7 @@ class RunSettings:
     score_prompt: str
     scoring_mode: str
     debug: bool
+    db_path: str
 
 
 def load_env_settings() -> EnvSettings:
@@ -78,6 +80,7 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
     profile_prompt = config.get("profile_prompt") or PROFILE_PROMPT_DEFAULT
     score_prompt = config.get("score_prompt") or SCORE_PROMPT_DEFAULT
     scoring_mode = config.get("scoring_mode") or "local"
+    db_path = config.get("db_path") or DEFAULT_DB_PATH
 
     if not cv_path:
         cv_path = input("Path to CV PDF: ").strip()
@@ -101,6 +104,7 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         "profile_prompt": profile_prompt,
         "score_prompt": score_prompt,
         "scoring_mode": scoring_mode,
+        "db_path": db_path,
     }
 
     try:
@@ -120,4 +124,5 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         score_prompt=score_prompt,
         scoring_mode=scoring_mode,
         debug=bool(debug_cfg),
+        db_path=db_path,
     )

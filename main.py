@@ -13,6 +13,7 @@ from hob_junter.core.analyzer import (
     red_team_analysis,
     score_job_match,
 )
+from hob_junter.core.database import get_db_connection, is_job_processed, mark_job_as_processed
 from hob_junter.core.llm_engine import create_openai_client
 from hob_junter.core.reporter import export_jobs_html, send_telegram_message, summarize_jobs
 from hob_junter.core.scraper import (
@@ -32,6 +33,9 @@ from hob_junter.utils.helpers import (
 async def run_pipeline():
     env_settings = load_env_settings()
     run_settings = load_run_settings()
+    
+    # DB Connection init
+    db_conn = get_db_connection(run_settings.db_path)
 
     client = create_openai_client(env_settings.openai_api_key)
     debug = run_settings.debug
@@ -148,6 +152,13 @@ async def run_pipeline():
     total_jobs = len(valid_jobs)
 
     for i, job in enumerate(valid_jobs):
+        # -- DB CHECK START --
+        if is_job_processed(db_conn, job.job_id):
+             sys.stdout.write(f"\r\033[K   ⏭ [Skipped - Already Seen] {job.company} - {job.title}")
+             sys.stdout.flush()
+             continue
+        # -- DB CHECK END --
+        
         elapsed = time.time() - start_time
         processed_count = i
 
@@ -192,6 +203,9 @@ async def run_pipeline():
             sys.stdout.write("   [Red Team] Done.\n")
 
         scored.append((job, score, reason, red_team_data))
+        
+        # -- DB SAVE --
+        mark_job_as_processed(db_conn, job, score)
 
         if (i + 1) % 5 == 0:
             good_matches_temp = [x for x in scored if x[1] >= run_settings.threshold]
@@ -199,6 +213,7 @@ async def run_pipeline():
                 export_jobs_html(good_matches_temp, strategy_data, report_filename)
 
     print("\n\n[Pipeline] Scoring complete.")
+    db_conn.close()
 
     good_matches = [x for x in scored if x[1] >= run_settings.threshold]
 
