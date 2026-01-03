@@ -28,12 +28,11 @@ How to use now:
 
 1.  **Install:**
     ```bash
-    pip install openai google-api-python-client google-auth-oauthlib requests trafilatura pypdf beautifulsoup4
+    python -c "import sqlite3; conn = sqlite3.connect('jobs.db'); conn.execute('CREATE TABLE jobs (job_id TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, score INTEGER, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); conn.commit(); conn.close(); print('Database initialized.')"
     ```
 
 
     ```bash
-python -c "import sqlite3; conn = sqlite3.connect('jobs.db'); conn.execute('CREATE TABLE jobs (job_id TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, score INTEGER, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); conn.commit(); conn.close(); print('Database initialized.')"
    
     ```
 
