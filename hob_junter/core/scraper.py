@@ -111,7 +111,11 @@ def input_exclusions_interactive() -> List[str]:
     return exclusions
 
 
-def construct_search_url(roles, locations, is_tech, exclusions):
+def construct_search_url(roles: List[str], locations: List[str], is_tech: bool, exclusions=None) -> str:
+    """
+    Constructs a Hiring.Cafe URL with forced Bulgaria location
+    and robust type handling for exclusions.
+    """
     import json
     import urllib.parse
 
@@ -123,20 +127,27 @@ def construct_search_url(roles, locations, is_tech, exclusions):
         "Data and Analytics"
     ] if is_tech else []
 
-    # 2. Build Query String (Roles + Exclusions)
-    # ... (тази част си е ок) ...
-    role_queries = [f'\\"{r}\\"' for r in roles]
+    # 2. Build Job Title Query
+    # Ensure roles are strings and quoted
+    role_queries = [f'\\"{r.strip()}\\"' for r in roles if r and r.strip()]
     query_parts = " OR ".join(role_queries)
     full_query = f"({query_parts})"
 
+    # 3. Handle Exclusions (Fixing the Crash)
     if exclusions:
-        # Fix: Ensure exclusions are properly formatted
-        excl_list = [f'NOT \\"{e.strip()}\\"' for e in exclusions.split(",") if e.strip()]
+        # If it's already a list, use it. If it's a string, split it.
+        if isinstance(exclusions, str):
+            excl_source = exclusions.split(",")
+        else:
+            excl_source = exclusions
+            
+        excl_list = [f'NOT \\"{e.strip()}\\"' for e in excl_source if e and e.strip()]
+        
         if excl_list:
             full_query += " " + " ".join(excl_list)
 
-    # 3. FORCE BULGARIA LOCATION OBJECT
-    # Това е обектът, който Hiring.Cafe очаква за "Bulgaria"
+    # 4. FORCE BULGARIA LOCATION (The Geolocation Fix)
+    # This specific object tells Hiring.Cafe "Look in Bulgaria", regardless of your IP.
     bulgaria_location = {
         "id": "QxY1yZQBoEtHp_8UEq3V",
         "types": ["country"],
@@ -155,17 +166,17 @@ def construct_search_url(roles, locations, is_tech, exclusions):
         }
     }
     
-    # Винаги слагаме България, независимо какво казва CV-то
+    # We override whatever locations came from the CV with this hardcoded target
     final_locations = [bulgaria_location]
 
-    # 4. Construct State
+    # 5. Construct State Object
     state = {
         "departments": departments,
         "jobTitleQuery": full_query,
-        "locations": final_locations  # <--- Ето тук подаваме хардкоднатия обект
+        "locations": final_locations
     }
 
-    # 5. Encode
+    # 6. Encode and Return
     json_str = json.dumps(state)
     encoded = urllib.parse.quote(json_str)
     
