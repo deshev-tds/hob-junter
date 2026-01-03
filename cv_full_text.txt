@@ -2,6 +2,7 @@ Damyan Deshev
 Technology & Infrastructure Leader | Cloud, SRE, DevOps, Data Platforms, AI Automation
 Sofia, Bulgaria | T: +359 899 355 050 | E: damyan.deshev@gmail.com
 
+
 PROFILE
 Technology leader with 12+ years of experience in scaling engineering organizations, driving cloud and infrastructure transformations, and building high-performance DevOps, SRE, Platform, and DBA teams across global, regulated, 24/7 operational environments. Experienced in organisational design, modernizing engineering delivery, governing multi-million-dollar cloud portfolios, and introducing AI-assisted automations. Recognized on a C-level for enabling cross-team alignment, steering complex migrations, and developing systems, processes, and other leaders.
 

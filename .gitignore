@@ -25,3 +25,4 @@ pyvenv.cfg
 .DS_Store
 cv_profile_master.json
 job_history.json
+cv_full_text.txt
