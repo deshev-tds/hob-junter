@@ -23,6 +23,8 @@ from hob_junter.core.scraper import (
     parse_hiring_cafe_search_state_from_url,
     select_roles_interactive,
 )
+# --- FIX 1: ADDED MISSING IMPORTS FOR SHEETS MANIPULATIONS ---
+from hob_junter.core.sheets import get_gspread_client, log_job_to_sheet 
 from hob_junter.utils.helpers import (
     load_cv_profile_from_json,
     print_phase_header,
@@ -36,6 +38,15 @@ async def run_pipeline():
     
     # DB Connection init
     db_conn = get_db_connection(run_settings.db_path)
+
+    # --- FIX 2: ADDED SHEETS INITIALIZATION ---
+    sheets_client = None
+    if run_settings.spreadsheet_id and os.path.exists(run_settings.google_creds_path):
+        sheets_client = get_gspread_client(run_settings.google_creds_path)
+        if sheets_client:
+            print(f"[Init] Connected to Google Sheets.")
+    else:
+        print("[Init] Google Sheets disabled (missing ID or creds file).")
 
     client = create_openai_client(env_settings.openai_api_key)
     debug = run_settings.debug
@@ -150,6 +161,9 @@ async def run_pipeline():
     scored = []
     start_time = time.time()
     total_jobs = len(valid_jobs)
+    
+    # --- INITIALIZE COUNTER ---
+    sheet_count = 0
 
     for i, job in enumerate(valid_jobs):
         # -- DB CHECK START --
@@ -203,9 +217,17 @@ async def run_pipeline():
             sys.stdout.write("   [Red Team] Done.\n")
 
         scored.append((job, score, reason, red_team_data))
-        
+
         # -- DB SAVE --
         mark_job_as_processed(db_conn, job, score)
+
+        # -- SHEETS SAVE (REAL-TIME) --
+        if sheets_client and score >= run_settings.threshold:
+            sys.stdout.write(f"   [Sheet] Logging to Google... ")
+            sys.stdout.flush()
+            log_job_to_sheet(sheets_client, run_settings.spreadsheet_id, job, score, reason)
+            sys.stdout.write("Done.\n")
+            sheet_count += 1
 
         if (i + 1) % 5 == 0:
             good_matches_temp = [x for x in scored if x[1] >= run_settings.threshold]
@@ -225,6 +247,8 @@ async def run_pipeline():
             chat_id=env_settings.telegram_chat_id,
         )
         print(f"[Success] Report saved to {report_filename}")
+        if sheets_client:
+            print(f"[Success] {sheet_count} high-scoring jobs logged to Google Sheets.")
     else:
         print("No matches met the threshold.")
 
