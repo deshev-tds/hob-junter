@@ -1,4 +1,4 @@
-# Hob Junter  
+# Hob Junter 3.3
 (ATS-flavored, mildly hostile)
 
 This exists because manually browsing job boards is a form of quiet, socially accepted self-harm.
@@ -13,130 +13,85 @@ This exists because manually browsing job boards is a form of quiet, socially ac
 - aggressively filters out low-signal roles,
 - and exposes only jobs that are statistically worth attention.
 
-Finding a new job is not a vibes and giigle process, it's a numbers (and data, and some intuition...) process. This tools does only: 
-
-- scores,
-- reasons,
-- and produces direct apply links.
-
-## What this is not
-
-- Not a SaaS AI mega-startup that will 100% GET YOU HIRED OR YOUR MONEY BACK ($99.99/year).
-- Not a replacement for recruiters, HR, or career consultants.
-- Not a promise of interviews.
-- Not polite.
-- Not optimized for feelings (I honestly tried - didn't work).
-
-It will absolutely tell you:
-> “This role wants Python, finance, and marketing analytics. You have none of that. Move on.”
-
-And it will do so calmly and consistently.
-
-## How it works (non-marketing version)
-
-1. A search URL is constructed for hiring.cafe (they are the LAST cool place for folks looking to change careers. Please love them and use this type of tools sparingly <3 )
-   (job titles + keywords + mild optimism).  
-   Currently this can be provided manually. Also, extracting keywords directly from the CV is tested and confirmed as working - if you don't provide a url in the json file, you will be asked questions interactively so it is constructed live for you.
-   You also get a "bonus" review of your CV and GPT pings you back in the terminal, suggesting what roles to apply to have better chances. You can either listen to it, or list your own in the interactive prompt. Those will be used to construct the job aggregator URL correctly. 
-
-3. Job listings are fetched, normalized, and deduplicated.
-
-4. Each role is evaluated against a CV using a **local LLM**.  
-   Optionally, you can pass an `OPENAI_API_KEY` and ask the script to bother Sam Altman instead of your own GPU.
-
-5. Each job receives:
-   - a numeric score (0–100),
-   - a short, explicit justification explaining the score.
-
-6. Anything below a hard threshold is discarded **before** it reaches the UI.  
-   The default cutoff is **65**, configurable via `inputs.json`.
-
-If it doesn’t make the cut, it does not exist.
-
-## Scoring philosophy
-
-The system uses explicit score bands:
-
-- **85–100** -> Apply without overthinking  
-- **75–84** -> Human sanity check required  
-- **65–74** -> Opportunistic / market-dependent  
-- **<65** -> Discarded before presentation
-
-Yes, the cutoff is intentional, and no, you are not “missing hidden gems”.
-
-This scoring model is inspired by real-world enterprise ATS behavior -
-the same systems responsible for 50–60% of CVs never reaching human eyes.
-
-The difference is that here, the rules are visible.
-
-## Why this exists
+## Why it exists? 
 
 Because:
+
 - job searching is a numbers game,
 - humans are terrible at consistent filtering,
 - and ATS systems already treat candidates as structured data.
 
 This just returns the favor.
 
-## Architecture & execution notes
+**Hob Junter v3** is the "adult" version of the previous chaos. It is now a tiny personal job reconnaissance tool that:
 
-- Python-based pipeline
-- Local LLMs tested primarily with **Mixtral 8x7B variants** (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
-- You can switch to OpenAI for analysis so you hog Sam Altman's GPUs and not yours (change to "scoring_mode": "openai" in inputs.json). 
-- Static HTML output for review and decision-making
-- Designed to run **attended**
-- Uses a **headful Playwright browser** when required to deal with real-world content delivery quirks  
-  (If you know, you know.)
+- **Bypasses aggregators** entirely (RIP Hiring.cafe, we loved you, but we moved on).
+- **Targets the source:** Queries the Google Search API directly for `greenhouse.io`, `lever.co`, `ashbyhq.com`, and friends.
+- **Scores ruthlessly:** Uses an LLM (GPT-4o, qwen3 VI 30B, etc.)  to judge roles against your CV with the cynicism of a tired recruiter.
+- **Protects your dignity:** Implements fuzzy deduplication so you don't apply to the same role twice like a desperate amateur.
 
-This is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
+Finding a new job is not a vibes and giggles process. It's a numbers, data, and API quota process. This tool:
+- Scores.
+- Reasons.
+- Produces direct links.
+- **Doesn't crash** because we finally killed the headless browser.
 
-The system favors:
-- predictability over cleverness
-- explicit thresholds over vague “fit”
-- boring reliability over architectural purity
+## The pivot (Why v3?)
 
-No cloud magic required (except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model. 
+The previous version relied on `Playwright` and hope. It was heavy, slow, and got blocked by Cloudflare if you looked at it wrong. Also, I sneezed near it once and got an OOM. I kid you not. 
 
-## How to run this (Local Setup)
+**v3 is a Sniper:**
+1.  **No browser:** I now use `requests` + `trafilatura`. It runs on a potato.
+2.  **Circuit breakers:** If a domain (e.g., Greenhouse) returns a 429 (Too Many Requests), I stop hitting it instantly across all threads. I don't spam. 
+3.  **Cleanliness:** I strip marketing tracking params (`utm_source`, `gclid`) but keep functional routing parameters. The URLs are clean.
+4.  **Thread-Safe Concurrency:** Yes, I use locking. Yes, it's over-engineered. No, I don't care, because this is ther right thing to do! 
 
-### 1. The Environment
-Standard Python 3.10+ setup. 
-```bash
-pip install openai playwright google-auth google-auth-oauthlib google-api-python-client requests
-playwright install chromium
-```
+## What this is not
 
-### 2. The Credentials
-This is the only friction point. The script requires:
-- **OpenAI Key:** Export `OPENAI_API_KEY` in your environment. This is used for the initial CV parsing and strategy. 
-- **Google Sheets:** You need a `client_secret.json` in the root folder. You must go to the Google Cloud Console, enable the Sheets API, and create OAuth Desktop credentials. It is tedious, but it is required for the output to go somewhere useful.
-- **Telegram (Optional):** Export `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` if you want mobile pings. If missing, it fails silently to stdout.
+- **Polite.**
+- **Optimized for feelings.** (I tried; didn't work).
+- **A guarantee.**
+- **Free.** You need API keys now for the upsrteam providers. Freedom costs tokens.
 
-### 3. Local LLM Setup
-If you want to run the *scoring* locally (which is the intended use case):
-1. Use LM Studio, Ollama, or LocalAI.
-2. Load a model (Mixtral 8x7B recommended; smaller models tend to hallucinate score logic).
-3. Start the local server on port `1234` (standard for LM Studio).
-4. In `inputs.json` (created on first run), ensure `"scoring_mode": "local"`.
+It will absolutely tell you:
+> “Score: 15. Reason: You are a Director. This is an unpaid internship. Have some self-respect.”
 
-If not, the script is currently setup to use opanai instead anyway(in the json -> scoring_mode: "openai"). 
+## How it works
 
-### 4. Execution
-```bash
-python hob-junter.py
-```
-It will ask for your CV PDF path and Google Sheet ID on the first run. Afterward, it saves configs to `inputs.json` so you don't have to enter them again.
+1.  **The profile Llock:** On first run, it reads your CV and generates a `cv_profile_master.json`. **You must review this.** It is the single point of truth. If this is wrong, every score will be wrong.
+2.  **The hunt:** It uses Google dorking (`site:boards.greenhouse.io "Director" "Remote"`) to find jobs indexed in the last 7 days.
+3.  **The filter:**
+    * **Garbage detector:** Drops pages that scream "Enable JavaScript" or "Cloudflare Access Denied".
+    * **Freshness gate:** Checks JSON-LD Schema to ensure the job wasn't actually posted 3 months ago and just bumped.
+4.  **The score:** GPT-4o or whatever model you have chosen for this reads the *actual* text (not just the dork snippet) and outputs a JSON verdict.
+
+## Setup
+
+You need to be a verified human with a wallet.
+
+1.  **Install:**
+    ```bash
+    pip install openai google-api-python-client google-auth-oauthlib requests trafilatura pypdf beautifulsoup4
+    ```
+
+2.  **Keys:**
+    * **OpenAI API Key:** For the cloud brain, if you need one.
+    * **Google Custom Search API Key:** For the eyes.
+    * **Google CSE ID (cx):** Create a search engine that searches "The entire web".
+
+3.  **Run:**
+    ```bash
+    python hob-junter3.4.py
+    ```
 
 ## Ethics & disclaimers
 
-- This does not auto-apply anywhere.
-- This does not scrape private or authenticated data.
-- This does not guarantee interviews.
-- This does not pretend hiring is fair.
-
-It only reduces wasted time and cognitive load.
+- **I try not to be loud:** I hit ATS endpoints directly. The script attempts to be polite (rate limits, backooff logic, circuit breakers), but you are responsible for your IP reputation.
+- **I am biased:** The scoring logic favors the user's success over the company's requirements.
+- **I am cold:** If the text extraction fails, I cap the score at 65. I don't guess.
 
 ## Final note
 
-If this makes you uncomfortable, that’s fine.  
-Hiring pipelines *should* feel a little uncomfortable when you start understanding them.
+If the brutality of the feedback loop makes you uncomfortable, that’s fine. The job market doesn't care - and it's honestly quite uncomfortable once you start understading it.
+
+*Happy hunting.*
