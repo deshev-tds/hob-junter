@@ -30,6 +30,7 @@ CONFIG_FILE = "inputs.json"
 PROFILE_FILE = "cv_profile_master.json"
 HISTORY_FILE = "job_history.json"
 REPORT_FILE = f"jobs_report_{datetime.now().strftime('%Y%m%d_%H%M')}.html"
+DEBUG = True
 
 ATS_TARGETS = [
     "site:boards.greenhouse.io",
@@ -50,6 +51,10 @@ GARBAGE_SIGNATURES = [
     "access denied", "error 1020", "cloudflare", 
     "captcha", "human verification", "too many requests"
 ]
+
+def debug(msg):
+    if DEBUG:
+        print(f"[DEBUG] {msg}")
 
 SCORE_PROMPT = """You are a ruthless Executive Recruiter. 
 Assess this job for a Senior Tech Leader.
@@ -85,8 +90,11 @@ DOMAIN_LOCK = Lock()
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
-        try: with open(CONFIG_FILE, "r") as f: return json.load(f)
-        except: return {}
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def save_config(cfg):
@@ -216,8 +224,11 @@ class Deduplicator:
 
     def _load_history(self):
         if os.path.exists(self.history_file):
-            try: with open(self.history_file, "r") as f: return json.load(f)
-            except: pass
+            try:
+                with open(self.history_file, "r") as f:
+                    return json.load(f)
+            except:
+                pass
         return []
 
     def save(self, company, title, url):
@@ -266,7 +277,9 @@ def fetch_ats_content_robust(url):
             if should_log: print(f" [!!!] DOMAIN BLOCKED ({resp.status_code}): {domain}. Circuit broken.")
             return None, None, 'BLOCK'
             
-        if resp.status_code != 200: return None, None, 'ERROR'
+        if resp.status_code != 200:
+            debug(f"[Fetch] Non-200 ({resp.status_code}) for {url}")
+            return None, None, 'ERROR'
         
         soup = BeautifulSoup(resp.text, 'html.parser')
         text = ""
@@ -299,7 +312,9 @@ def fetch_ats_content_robust(url):
 
         return text, date_posted, 'SUCCESS'
             
-    except Exception as e: return None, None, 'ERROR'
+    except Exception as e:
+        debug(f"[Fetch] Exception for {url}: {e}")
+        return None, None, 'ERROR'
 
 # ==========================================
 # 6. ENGINE LOGIC
@@ -314,6 +329,7 @@ class HobJunterEngine:
         self.deduper = Deduplicator()
         self.telegram = None
         self.sheets = None
+        self.debug = bool(self.cfg.get("debug", True))
 
     def setup(self):
         print(">>> HOB JUNTER 3.4: PLATINUM EDITION <<<")
@@ -330,7 +346,13 @@ class HobJunterEngine:
         changed |= prompt_and_store("openai_key", "OpenAI Key: ")
         changed |= prompt_and_store("google_api_key", "Google API Key: ")
         changed |= prompt_and_store("google_cse_id", "Google CX ID: ")
+        self.debug = bool(self.cfg.get("debug", True))
+        if self.debug != self.cfg.get("debug"):
+            self.cfg["debug"] = self.debug
+            changed = True
         if changed: save_config(self.cfg)
+        global DEBUG
+        DEBUG = self.debug
         
         self.client = OpenAI(api_key=self.cfg["openai_key"])
         self.google_service = build("customsearch", "v1", developerKey=self.cfg["google_api_key"])
@@ -383,8 +405,17 @@ class HobJunterEngine:
                     for start in [1, 11]: 
                         res = self.google_service.cse().list(
                             q=query, cx=self.cfg["google_cse_id"],
-                            num=10, start=start, dateRestrict='w1'
+                            num=10, start=start #, dateRestrict='w1' # <--- DISABLED FOR DEBUG
                         ).execute()
+
+                        # === DEBUG INJECTION ===
+                        if self.debug:
+                            print(f"\n[DEBUG-RAW] Query: {query}")
+                            print(f"[DEBUG-RAW] Total Results: {res.get('searchInformation', {}).get('totalResults', 'N/A')}")
+                            if 'items' not in res:
+                                print(f"[DEBUG-RAW] NO ITEMS FOUND. Full Response keys: {list(res.keys())}")
+                        # =======================
+
                         for item in res.get('items', []):
                             raw_leads.append({
                                 "url": clean_url(item['link']),
@@ -395,6 +426,7 @@ class HobJunterEngine:
                 except Exception as e:
                     if "Quota" in str(e): print("\n[!] Google Quota Exceeded."); return raw_leads
                     print(f"\n[!] Google API Error: {e}")
+                    debug(f"[Google] Query '{query}' failed: {e}")
 
         unique = {l['url']: l for l in raw_leads}.values()
         print(f"\n[Sniper] Acquired {len(unique)} unique targets.")
@@ -481,7 +513,9 @@ class HobJunterEngine:
                             "is_snippet": (data_type == "SNIPPET_ONLY"),
                             "status": status
                         })
-                except Exception as e: print(f" Err: {e}")
+                except Exception as e:
+                    print(f" Err: {e}")
+                    debug(f"[Scoring] Lead error for {lead.get('url')}: {e}")
         return results
 
     def generate_report(self, results):
