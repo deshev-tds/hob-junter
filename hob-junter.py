@@ -900,7 +900,7 @@ def export_jobs_html(jobs_with_scores, strategy_data, path: str):
       
       <div class="grid-container">
         <div class="panel">
-           <h3>🧠 AI Strategic Assessment</h3>
+           <h3> AI Strategic Assessment</h3>
            <p style="font-size:0.9em; color:#555;">Based on your profile, the following opportunities offer the highest probability of success:</p>
            <ul class="suggestion-list">{suggestions_html}</ul>
         </div>
@@ -932,7 +932,7 @@ def export_jobs_html(jobs_with_scores, strategy_data, path: str):
             hook = red_team_data.get('outreach_hook', 'N/A')
             red_team_html = f"""
             <div style="background: #fff0f0; padding: 12px; margin-top: 10px; border-left: 4px solid #d93025; font-size: 0.9em; border-radius: 4px;">
-                <strong style="color: #b71c1c;">👹 Red Team Analysis (Kill Questions):</strong>
+                <strong style="color: #b71c1c;"> Red Team Analysis (Kill Questions):</strong>
                 <ul style="margin: 5px 0 10px 20px; color: #333;">{questions}</ul>
                 <div style="background: #e3f2fd; padding: 8px; border-left: 4px solid #1976d2; color: #0d47a1; margin-top: 5px;">
                     <strong>📧 Sniper Outreach:</strong> "{html.escape(hook)}"
@@ -1176,14 +1176,14 @@ async def main():
         # Only run Red Team for high scores (e.g. >= 85)
         if score >= 85 and cv_text_raw:
              # CLEAR LINE & PRINT ALERT
-             sys.stdout.write(f"\n\r\033[K   🚨 \033[1;32mHIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\033[0m\n")
-             sys.stdout.write(f"   👹 [Red Team] Engaged... (This takes a moment)\n")
+             sys.stdout.write(f"\n\r\033[K   \033[1;32mHIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\033[0m\n")
+             sys.stdout.write(f"   [Red Team] Engaged... (This takes a moment)\n")
              sys.stdout.flush()
              
              red_team_data = red_team_analysis(cv_text_raw, job)
              
              # Print completion of Red Team so user knows we are moving on
-             sys.stdout.write(f"   ✅ [Red Team] Done.\n")
+             sys.stdout.write(f"   [Red Team] Done.\n")
         
         scored.append((job, score, reason, red_team_data))
         
