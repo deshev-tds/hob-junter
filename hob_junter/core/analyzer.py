@@ -138,9 +138,11 @@ def score_job_match(
 
 
 def red_team_analysis(
-    local_llm_url: str,
     cv_full_text: str,
     job: JobRecord,
+    mode: str = "local",
+    local_llm_url: str = LOCAL_LLM_URL,
+    client=None,
     prompt_template: str = RED_TEAM_PROMPT,
 ) -> Dict[str, Any]:
     clean_desc = re.sub("<[^<]+?>", " ", job.description)
@@ -150,19 +152,37 @@ def red_team_analysis(
     prompt = prompt.replace("{job_description}", clean_desc[:10000])
     prompt = prompt.replace("{cv_full_text}", cv_full_text[:20000])
 
-    content = llm_engine.local_chat_content(
-        local_llm_url=local_llm_url,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a cynical, hostile hiring manager. Output STRICT JSON only. No markdown, no pre-amble.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-        max_tokens=1024,
-        timeout=180,
-    )
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a cynical, hostile hiring manager. Output STRICT JSON only. No markdown, no pre-amble.",
+        },
+        {"role": "user", "content": prompt},
+    ]
 
-    content = llm_engine.strip_json_markdown(content)
-    return safe_json_loads(content)
+    try:
+        content = ""
+        if mode == "openai" and client:
+            content = llm_engine.openai_chat_content(
+                client=client,
+                messages=messages,
+                model=OPENAI_MODEL,
+                temperature=0.5, # Slightly higher for creativity in critique
+                max_tokens=1024,
+                response_format={"type": "json_object"},
+            )
+        else:
+            # Default to local
+            content = llm_engine.local_chat_content(
+                local_llm_url=local_llm_url,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1024,
+                timeout=180,
+            )
+
+        content = llm_engine.strip_json_markdown(content)
+        return safe_json_loads(content)
+        
+    except Exception as e:
+        return {"error": str(e), "risk_assessment": "Error", "gaps": []}

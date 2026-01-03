@@ -79,6 +79,19 @@ def run_wizard():
     if scoring_mode == "openai":
         print_warn("Ensure you have set OPENAI_API_KEY in your environment variables!")
 
+    # --- 3.5 RED TEAM CONFIG ---
+    print_info("Scoring is for volume. Red Team is for precision.")
+    print_info("You can use a cheaper local model for scoring, but GPT-4 for the critical critique.")
+    
+    red_team_mode = prompt_user("Red Team Engine (local/openai) [Press Enter to match Scoring]", default="")
+    
+    if not red_team_mode:
+        red_team_mode = scoring_mode
+        print(f"    Red Team will use: {red_team_mode} (same as scoring)")
+    else:
+        print(f"    Red Team set to: {red_team_mode}")
+
+
     # --- 4. SIGNAL FILTER (THRESHOLD) ---
     print_header("STEP 4: SIGNAL-TO-NOISE RATIO")
     print_info("The Threshold determines how picky the bot is (0-100).")
@@ -105,7 +118,7 @@ def run_wizard():
     spreadsheet_id = ""
     
     if setup_sheets in ("y", "yes", "1"):
-        print("\n📝 INSTRUCTIONS (Read carefully):")
+        print("\n INSTRUCTIONS (Read carefully):")
         print("1. Go to: https://console.cloud.google.com/")
         print("2. Create a New Project (e.g., 'Job-Hunter').")
         print("3. Search for & ENABLE these two APIs:")
@@ -148,6 +161,7 @@ def run_wizard():
         "threshold": threshold,
         "debug": debug,
         "scoring_mode": scoring_mode,
+        "red_team_mode": red_team_mode, # <--- SAVE THIS
         "db_path": db_path,
         "google_creds_path": creds_path
     }

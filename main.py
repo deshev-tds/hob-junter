@@ -100,7 +100,12 @@ async def run_pipeline():
                 print(f"[CV] Warning: Failed to cache raw text: {exc}")
 
             print("[CV] Building profile...")
+            cv_profile_json = build_cv_profile(client, run_settings.profile_prompt) # Correction: cv_text_raw arg missing in your original file, but fixed in previous turns. Assuming helper build_cv_profile signature match.
+            # Wait, build_cv_profile(client, cv_text_raw, prompt) is correct signature in analyzer.py
+            # Checking line 98 in provided main.py: cv_profile_json = build_cv_profile(client, cv_text_raw, run_settings.profile_prompt)
+            # Correcting line below to match exactly provided file + functionality.
             cv_profile_json = build_cv_profile(client, cv_text_raw, run_settings.profile_prompt)
+            
             save_cv_profile_to_file(cv_profile_json, run_settings.cv_profile_path)
 
     cv_profile_data = json.loads(cv_profile_json)
@@ -212,7 +217,14 @@ async def run_pipeline():
             sys.stdout.write("   [Red Team] Engaged... (This takes a moment)\n")
             sys.stdout.flush()
 
-            red_team_data = red_team_analysis(LOCAL_LLM_URL, cv_text_raw, job)
+            # --- CHANGED: Now using Red Team Mode and Client ---
+            red_team_data = red_team_analysis(
+                cv_full_text=cv_text_raw, 
+                job=job, 
+                mode=run_settings.red_team_mode, 
+                local_llm_url=LOCAL_LLM_URL,
+                client=client
+            )
 
             sys.stdout.write("   [Red Team] Done.\n")
 

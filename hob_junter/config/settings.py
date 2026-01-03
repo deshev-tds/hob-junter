@@ -42,6 +42,7 @@ class RunSettings:
     profile_prompt: str
     score_prompt: str
     scoring_mode: str
+    red_team_mode: str  # <--- NEW FIELD
     debug: bool
     db_path: str
     google_creds_path: str
@@ -82,6 +83,8 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
     profile_prompt = config.get("profile_prompt") or PROFILE_PROMPT_DEFAULT
     score_prompt = config.get("score_prompt") or SCORE_PROMPT_DEFAULT
     scoring_mode = config.get("scoring_mode") or "local"
+    # NEW: Default Red Team mode to Scoring mode if not set
+    red_team_mode = config.get("red_team_mode") or scoring_mode
     db_path = config.get("db_path") or DEFAULT_DB_PATH
     google_creds_path = config.get("google_creds_path") or DEFAULT_CREDS_PATH
 
@@ -107,6 +110,7 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         "profile_prompt": profile_prompt,
         "score_prompt": score_prompt,
         "scoring_mode": scoring_mode,
+        "red_team_mode": red_team_mode,  # <--- SAVE TO CONFIG
         "db_path": db_path,
         "google_creds_path": google_creds_path,
     }
@@ -127,6 +131,7 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         profile_prompt=profile_prompt,
         score_prompt=score_prompt,
         scoring_mode=scoring_mode,
+        red_team_mode=red_team_mode,  # <--- RETURN IN SETTINGS
         debug=bool(debug_cfg),
         db_path=db_path,
         google_creds_path=google_creds_path,
