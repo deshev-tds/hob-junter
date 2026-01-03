@@ -57,7 +57,7 @@ DEFAULT_CV_PROFILE_PATH = "cv_profile.json"
 
 OCR_PROMPT_DEFAULT = "Extract all human-readable text from this PDF. No formatting, no comments, no summary. Return ONLY the plain text content of the CV."
 
-# --- NEW: STRATEGY PROMPT WITH EXPLICIT TECH DETECTION ---
+# --- STRATEGY PROMPT ---
 STRATEGY_PROMPT = """You are an elite Executive Headhunter and Career Strategist.
 Analyze the candidate's CV text below. 
 
@@ -249,7 +249,6 @@ def load_run_parameters():
 
     if not cv_path:
         cv_path = input("Path to CV PDF: ").strip()
-    # Note: We allow search_url to be empty now to trigger auto-generation
     if not spreadsheet_id:
         spreadsheet_id = input("Google Sheet ID: ").strip()
     if threshold is None or threshold == "":
@@ -304,61 +303,6 @@ def safe_json_loads(raw: str):
         return json.loads(raw)
     except Exception:
         return {}
-
-
-def get_google_service():
-    if not os.path.exists(GOOGLE_CLIENT_SECRET_FILE):
-        raise FileNotFoundError(f"Missing Google client secret file at {GOOGLE_CLIENT_SECRET_FILE}")
-
-    creds = None
-
-    if os.path.exists(GOOGLE_TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(GOOGLE_TOKEN_FILE, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            with_retries(lambda: creds.refresh(Request()))
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                GOOGLE_CLIENT_SECRET_FILE, SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        with open(GOOGLE_TOKEN_FILE, "w") as f:
-            f.write(creds.to_json())
-
-    return build("sheets", "v4", credentials=creds)
-
-
-def ensure_sheet_exists(service, spreadsheet_id: str, sheet_name: str):
-    metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-    for s in metadata.get("sheets", []):
-        if s["properties"]["title"] == sheet_name:
-            return
-
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=spreadsheet_id,
-        body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
-    ).execute()
-
-    header = [["job_id", "title", "company", "apply_url", "source_url", "score", "reason"]]
-    service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range=f"{sheet_name}!A1",
-        valueInputOption="RAW",
-        body={"values": header},
-    ).execute()
-
-
-def append_jobs(service, spreadsheet_id: str, sheet_name: str, jobs: List[List[str]]):
-    ensure_sheet_exists(service, spreadsheet_id, sheet_name)
-
-    service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range=f"{sheet_name}!A1",
-        valueInputOption="RAW",
-        body={"values": jobs},
-    ).execute()
 
 
 def extract_text_from_cv_pdf_with_gpt(pdf_path: str, ocr_prompt: str) -> str:
@@ -419,7 +363,6 @@ def save_cv_profile_to_file(profile_json: str, path: str):
 
 
 def build_cv_profile(cv_text: str, profile_prompt: str) -> str:
-    # Avoid .format() on JSON templates with braces; just replace the single token.
     prompt = profile_prompt.replace("{cv_text}", cv_text[:20000])
 
     resp = with_retries(
@@ -443,7 +386,7 @@ def build_cv_profile(cv_text: str, profile_prompt: str) -> str:
 
 
 # ==========================================
-# Job model
+# Job model (REVISED FROM API DUMP)
 # ==========================================
 
 @dataclass
@@ -458,29 +401,36 @@ class JobRecord:
 
     @staticmethod
     def from_api(job: Dict[str, Any]) -> "JobRecord":
-        job_id = (
-            str(job.get("id"))
-            or str(job.get("jobId"))
-            or job.get("slug")
-            or f"{job.get('title','')}|{job.get('company_name','')}"
-        )
-        title = job.get("title") or job.get("jobTitle") or ""
-        company = job.get("company_name") or job.get("companyName") or ""
-        # The key field for external scraping:
-        apply_url = job.get("apply_url") or job.get("jobUrl") or ""
+        # 1. ID
+        job_id = str(job.get("id") or job.get("objectID") or "")
+        
+        # 2. Information Block
+        info = job.get("job_information", {})
+        processed_job = job.get("v5_processed_job_data", {})
+        processed_comp = job.get("v5_processed_company_data", {})
+        
+        # 3. Title (Try nested info first, then processed)
+        title = info.get("title") or info.get("job_title_raw") or processed_job.get("core_job_title") or ""
+        
+        # 4. Company (Try processed job data, then company data, then info)
+        company = processed_job.get("company_name") or processed_comp.get("name") or "Unknown Company"
+        
+        # 5. URLs
+        apply_url = job.get("apply_url") or ""
         source_url = HIRING_BASE
+        
+        # 6. Description (Now available directly in JSON!)
+        description = info.get("description", "")
+        # Clean up HTML tags if desired, but scoring prompt handles text. 
+        # For simple text extraction we can just let the LLM handle the HTML or strip it later.
 
-        return JobRecord(job, job_id, title, company, apply_url, source_url, job.get("description", ""))
+        return JobRecord(job, job_id, title, company, apply_url, source_url, description)
 
 # ==========================================
-# DYNAMIC URL CONSTRUCTION & ADVISORY
+# DYNAMIC URL & STRATEGY
 # ==========================================
 
 def consult_career_advisor_gpt(cv_text: str) -> Dict[str, Any]:
-    """
-    Asks the LLM for strategic role advice AND Industry classification.
-    Returns: { "industry": str, "is_tech_industry": bool, "suggestions": [...] }
-    """
     prompt = STRATEGY_PROMPT.replace("{cv_text}", cv_text[:20000])
 
     print("[Advisor] Consulting GPT for strategic role targeting & industry...")
@@ -504,9 +454,6 @@ def consult_career_advisor_gpt(cv_text: str) -> Dict[str, Any]:
         return {}
 
 def select_roles_interactive(ai_suggestions: List[Dict[str, str]]) -> List[str]:
-    """
-    Displays AI suggestions with reasoning and allows user to select/add roles.
-    """
     if not ai_suggestions:
         print("[Advisor] AI returned no suggestions.")
         return []
@@ -532,7 +479,6 @@ def select_roles_interactive(ai_suggestions: List[Dict[str, str]]) -> List[str]:
     
     final_roles = []
     
-    # 1. Parse Selections vs Text
     if not user_input:
         print("[Config] Selected ALL recommended roles.")
         return [x['role'] for x in ai_suggestions]
@@ -550,25 +496,13 @@ def select_roles_interactive(ai_suggestions: List[Dict[str, str]]) -> List[str]:
                 custom_roles.append(p)
                 final_roles.append(p)
     
-    # Warning for custom roles
     if custom_roles:
-        print("\n" + "!"*60)
-        print(" WARNING: YOU ADDED CUSTOM ROLES")
-        print(f" Added: {', '.join(custom_roles)}")
-        print(" Manually adding roles usually DECREASES the signal-to-noise ratio.")
-        print(" The system works best when you trust the AI's functional matching.")
-        print("!"*60 + "\n")
-        time.sleep(1.5) 
+        print(f" WARNING: Added custom roles: {', '.join(custom_roles)}")
+        time.sleep(1.0) 
 
-    final_roles = list(set(final_roles))
-    
-    print(f"[Config] Final Search List: {', '.join(final_roles)}")
-    return final_roles
+    return list(set(final_roles))
 
 def input_exclusions_interactive() -> List[str]:
-    """
-    Asks the user for keywords to EXCLUDE from the search (NOT clause).
-    """
     print("\n" + "="*60)
     print(" EXCLUSION PROTOCOL (Signal-to-Noise Filter)")
     print("="*60)
@@ -587,55 +521,44 @@ def input_exclusions_interactive() -> List[str]:
     
     return exclusions
 
-
 def construct_search_url(roles: List[str], locations: List[str], is_tech_industry: bool, exclusions: List[str] = None) -> str:
-    """
-    Constructs a hiring.cafe URL based on explicit list of roles.
-    Applies IT Department filters ONLY if is_tech_industry is True.
-    Applies Negative (NOT) clauses for exclusions.
-    """
     if not roles:
         print("[Config] No roles provided to build URL.")
         return ""
 
-    # 1. Initialize Search State
     search_state = {}
 
-    # 2. Apply IT Skeleton if Model confirmed it is a Tech industry
+    # Apply IT Skeleton if Model confirmed it is a Tech industry
     if is_tech_industry:
-        print(f"[Config] Tech industry detected by AI. Applying IT Skeleton filters.")
+        print(f"[Config] Tech industry detected. Applying IT Skeleton filters.")
         search_state["departments"] = [
             "Engineering",
             "Software Development",
             "Information Technology",
             "Data and Analytics"
         ]
-    else:
-        print(f"[Config] Non-Tech industry detected. Skipping IT Skeleton filters.")
 
-    # 3. Clean and Quote Roles for Exact Match
+    # Clean and Quote Roles
     cleaned_roles = [f'\\"{r.strip()}\\"' for r in roles if r.strip()]
     if not cleaned_roles:
         return ""
 
-    # 4. Build the Positive Query String
+    # Build Query String
     query_string = f"({' OR '.join(cleaned_roles)})"
     
-    # 5. Apply Negative Clauses (Exclusions)
+    # Negative Clauses
     if exclusions:
-        # Format: (Role A OR Role B) NOT "Exclude A" NOT "Exclude B"
-        # We quote them to be safe (e.g. NOT "Tech Support")
         negative_clauses = [f'NOT \\"{e}\\"' for e in exclusions]
         query_string = f"{query_string} {' '.join(negative_clauses)}"
 
     search_state["jobTitleQuery"] = query_string
     
-    # 6. Handle Remote/Location (Optional)
+    # Remote/Location
     locs_lower = [loc.lower() for loc in locations]
     if any("remote" in l for l in locs_lower):
         search_state["remote"] = "Remote"
 
-    # 7. Encode
+    # Encode
     json_str = json.dumps(search_state)
     encoded_state = urllib.parse.quote(json_str)
     
@@ -699,7 +622,6 @@ async def fetch_jobs_via_browser(search_state: Dict[str, Any]) -> List[JobRecord
                 template_ready.set()
                 debug_print("[Playwright] Captured valid search pagination template.")
 
-            # Capture jobs from this response immediately
             try:
                 data = await resp.json()
             except Exception:
@@ -816,73 +738,59 @@ async def fetch_jobs_via_browser(search_state: Dict[str, Any]) -> List[JobRecord
 
     print(f"[Hiring] Total unique jobs found: {len(jobs)}")
     
-    # 4. EXTERNAL DESCRIPTION SCRAPING (CONCURRENT)
+    # 4. EXTERNAL DESCRIPTION SCRAPING (Optimized)
     await page.close() 
     
-    print("[Hiring] Fetching full descriptions from external ATS links (parallel)...")
+    # Identify jobs that lack a good description from the API
+    jobs_needing_scrape = [j for j in jobs if j.apply_url and len(j.description) < 200]
     
-    sem = asyncio.Semaphore(5) # Max 5 concurrent tabs
+    if jobs_needing_scrape:
+        print(f"[Hiring] {len(jobs_needing_scrape)} jobs need external scraping (others had data in JSON).")
+        sem = asyncio.Semaphore(5) # Max 5 concurrent tabs
 
-    async def fetch_external_desc(job: JobRecord):
-        target_url = job.apply_url
-        if not target_url:
-            return
+        async def fetch_external_desc(job: JobRecord):
+            target_url = job.apply_url
+            if not target_url:
+                return
 
-        async with sem:
-            p = await context.new_page()
-            try:
-                # 1. Load Page with increased timeout
-                # We use domcontentloaded for speed, but add a polling wait below for dynamic content.
-                await p.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-                
-                # 2. Smart Extraction Logic with Retry Loop
-                # Many ATS sites (Workday, etc.) load the shell first, then the content. 
-                # We poll for up to 10 seconds to find substantial text.
-                content = ""
-                for attempt in range(5):
-                    try:
-                        content = await p.evaluate("""() => {
-                            const clone = document.body.cloneNode(true);
-                            // Remove junk
-                            const junk = clone.querySelectorAll('script, style, noscript, svg, nav, header, footer, button, iframe');
-                            junk.forEach(el => el.remove());
-                            
-                            // First try innerText (cleanest)
-                            let text = clone.innerText || '';
-                            
-                            // If too short (likely blocked by overlay), fall back to textContent
-                            if (text.length < 800) {
-                                text = clone.textContent || '';
-                            }
-                            return text;
-                        }""")
-                    except Exception:
-                        pass # Page might be navigating or unstable
-                    
-                    # If we got a good chunk of text, we are done
-                    if len(content.strip()) > 500:
-                        break
-                    
-                    # Otherwise wait 2s and try again
-                    await asyncio.sleep(2.0)
+            async with sem:
+                p = await context.new_page()
+                try:
+                    await p.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+                    content = ""
+                    for attempt in range(5):
+                        try:
+                            content = await p.evaluate("""() => {
+                                const clone = document.body.cloneNode(true);
+                                const junk = clone.querySelectorAll('script, style, noscript, svg, nav, header, footer, button, iframe');
+                                junk.forEach(el => el.remove());
+                                let text = clone.innerText || '';
+                                if (text.length < 800) text = clone.textContent || '';
+                                return text;
+                            }""")
+                        except Exception:
+                            pass
+                        
+                        if len(content.strip()) > 500:
+                            break
+                        await asyncio.sleep(2.0)
 
-                # 3. Cleanup
-                clean_text = " ".join(content.split())
-                
-                if len(clean_text) > 200:
-                    job.description = clean_text
-                    debug_print(f"[External] Fetched {len(clean_text)} chars for {job.company}")
-                else:
-                    debug_print(f"[External] Text too short ({len(clean_text)}) for {job.company}, keeping default.")
-            
-            except Exception as e:
-                debug_print(f"[External] Timeout/Error {job.company}: {str(e)[:100]}")
-            finally:
-                await p.close()
+                    clean_text = " ".join(content.split())
+                    if len(clean_text) > 200:
+                        job.description = clean_text
+                        debug_print(f"[External] Fetched {len(clean_text)} chars for {job.company}")
+                    else:
+                        debug_print(f"[External] Text too short for {job.company}.")
+                except Exception as e:
+                    debug_print(f"[External] Timeout/Error {job.company}: {str(e)[:100]}")
+                finally:
+                    await p.close()
 
-    tasks = [fetch_external_desc(j) for j in jobs if j.apply_url]
-    if tasks:
-        await asyncio.gather(*tasks)
+        tasks = [fetch_external_desc(j) for j in jobs_needing_scrape]
+        if tasks:
+            await asyncio.gather(*tasks)
+    else:
+        print("[Hiring] All jobs contain descriptions from the API. Skipping external scrape.")
 
     await browser.close()
     await p.stop()
@@ -894,17 +802,18 @@ async def fetch_jobs_via_browser(search_state: Dict[str, Any]) -> List[JobRecord
 # ==========================================
 
 def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, scoring_mode: str) -> Tuple[int, str]:
-    # Prepare the context
+    # Sanitize HTML description for the prompt if needed (simple removal of tags)
+    clean_desc = re.sub('<[^<]+?>', ' ', job.description)
+    
     template_vars = {
         "cv_profile_json": cv_profile_json,
         "job_title": job.title,
         "job_company": job.company,
         "apply_url": job.apply_url,
         "job_raw": json.dumps(job.raw)[:2000], 
-        "job_description": (job.description or "")[:15000],
+        "job_description": clean_desc[:15000],
     }
     
-    # Use direct string replacement
     prompt = score_prompt
     for key, val in template_vars.items():
         prompt = prompt.replace("{" + key + "}", str(val))
@@ -918,13 +827,7 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
             resp = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an enterprise-grade Talent Intelligence Engine designed for objective candidate assessment.\n"
-                            "Output STRICT JSON ONLY."
-                        ),
-                    },
+                    {"role": "system", "content": "You are a talent intelligence engine. Output STRICT JSON."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.0,
@@ -932,24 +835,15 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
             )
             content = resp.choices[0].message.content if resp and resp.choices else ""
 
-        # --- LOCAL MODE (FIXED) ---
+        # --- LOCAL MODE ---
         else:
             resp = requests.post(
                 LOCAL_LLM_URL,
                 json={
                     "model": "local-model",
                     "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are an enterprise-grade Talent Intelligence Engine designed for objective candidate assessment.\n"
-                                "Output STRICT JSON ONLY."
-                            )
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
+                        {"role": "system", "content": "You are a talent intelligence engine. Output STRICT JSON."},
+                        {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.0,
                     "max_tokens": 512,
@@ -961,24 +855,19 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
                 print(f"[SCORING] API Error: {resp.status_code} {resp.text}")
                 return 0, "API Error"
             
-            # FIX: Parse the API JSON first to get the content string
             try:
                 api_response = resp.json()
                 content = api_response['choices'][0]['message']['content']
-            except (KeyError, ValueError, IndexError):
-                # Fallback: Maybe the server returned raw text?
+            except (KeyError, ValueError):
                 content = resp.text
 
-        # --- COMMON PARSING LOGIC ---
-        # 1. Clean markdown code blocks (e.g. ```json ... ```)
+        # Parse JSON from Markdown
         if "```" in content:
             match = re.search(r"```(?:json)?(.*?)```", content, re.DOTALL)
             if match:
                 content = match.group(1).strip()
             
-        # 2. Parse the actual score JSON
         result = safe_json_loads(content)
-        
         return int(result.get("score", 0)), str(result.get("reason", "No reason provided"))
 
     except Exception as exc:
@@ -987,15 +876,13 @@ def score_job_match(cv_profile_json: str, job: JobRecord, score_prompt: str, sco
 
 
 # ==========================================
-# Telegram
+# Telegram & Reports
 # ==========================================
 
 def send_telegram_message(text: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[Telegram] Missing config (token/chat_id).")
         return
 
-    # FIXED: Removed artifact from previous versions
     url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
         if len(text) > 4000:
@@ -1005,7 +892,7 @@ def send_telegram_message(text: str):
         else:
             requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
     except Exception as exc:
-        print(f"[Telegram] Error sending message: {exc}")
+        print(f"[Telegram] Error: {exc}")
 
 
 def summarize_jobs(jobs_with_scores):
@@ -1025,14 +912,9 @@ def summarize_jobs(jobs_with_scores):
 
 
 def export_jobs_html(jobs_with_scores, path: str):
-    """
-    Overwrites the HTML file with the full list of jobs.
-    Called incrementally to simulate 'appending' to the report.
-    """
     if not jobs_with_scores:
         return
     
-    # Sort by score descending
     jobs_sorted = sorted(jobs_with_scores, key=lambda x: x[1], reverse=True)
     rows = []
     
@@ -1114,52 +996,40 @@ async def main():
         scoring_mode,
     ) = load_run_parameters()
 
-    # GENERATE UNIQUE FILENAME FOR THIS RUN
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_filename = f"jobs_{timestamp}.html"
     print(f"[Init] Report will be saved to: {report_filename}")
 
-    # Create empty file immediately so user knows it exists
     with open(report_filename, "w") as f:
         f.write(f"<html><body><h1>Job Search Started: {timestamp}</h1><p>Waiting for matches...</p></body></html>")
 
-    # Step 1 - OCR the CV
+    # Step 1 - OCR / Cache
     if cv_path.lower().endswith(".json"):
-        print("[CV] Loading structured profile from JSON file...")
         cv_profile_json = load_cv_profile_from_json(cv_path)
     else:
-        # Check if cache exists AND is newer than the PDF
         use_cache = False
         if os.path.exists(cv_profile_path):
             try:
-                pdf_mtime = os.path.getmtime(cv_path)
-                json_mtime = os.path.getmtime(cv_profile_path)
-                if json_mtime > pdf_mtime:
+                if os.path.getmtime(cv_profile_path) > os.path.getmtime(cv_path):
                     use_cache = True
-                else:
-                    print("[CV] Detected newer PDF. Regenerating profile...")
             except OSError:
-                # Fallback if file access fails
                 pass
 
         if use_cache:
             print(f"[CV] Using cached profile: {cv_profile_path}")
             cv_profile_json = load_cv_profile_from_json(cv_profile_path)
         else:
-            print("[CV] Extracting text from PDF via GPT...")
+            print("[CV] Extracting text from PDF...")
             cv_text = extract_text_from_cv_pdf_with_gpt(cv_path, ocr_prompt)
-            print("[CV] Text extracted. Building profile...")
+            print("[CV] Building profile...")
             cv_profile_json = build_cv_profile(cv_text, profile_prompt)
             save_cv_profile_to_file(cv_profile_json, cv_profile_path)
     
-    # Convert string JSON to Dict for URL construction
     cv_profile_data = json.loads(cv_profile_json)
     
-    # NEW STEP: Interactive Strategy
+    # Step 2 - Strategy
     if not search_url:
         print("\n[Advisor] Initializing strategic analysis...")
-        # Note: We need the RAW text for strategy, but if we loaded from JSON cache, we might not have it.
-        # Fallback: Dump the JSON profile back to text if raw text is missing.
         if 'cv_text' not in locals():
             cv_text_for_strategy = json.dumps(cv_profile_data, indent=2)
         else:
@@ -1167,84 +1037,60 @@ async def main():
 
         advisor_response = consult_career_advisor_gpt(cv_text_for_strategy)
         
-        # EXTRACT INDUSTRY & SUGGESTIONS
         ai_suggestions = advisor_response.get("suggestions", [])
         industry = advisor_response.get("industry", "Unknown")
         is_tech_industry = advisor_response.get("is_tech_industry", False)
         
         print(f"\n[Advisor] Detected Industry: {industry}")
-        print(f"[Advisor] Tech/IT Filters: {'ON' if is_tech_industry else 'OFF'}")
-        
         final_roles = select_roles_interactive(ai_suggestions)
-        
-        # NEW: EXCLUSION PROTOCOL
         final_exclusions = input_exclusions_interactive()
         
-        # PASS THE is_tech_industry FLAG
         search_url = construct_search_url(final_roles, cv_profile_data.get("locations", []), is_tech_industry, final_exclusions)
         print(f"[Config] Generated URL: {search_url}")
         
         if not search_url:
-            print("[Error] Could not generate URL. Exiting.")
             return
 
-    # Step 2 - Parse URL
+    # Step 3 - Parse & Scrape
     try:
         search_state = parse_hiring_cafe_search_state_from_url(search_url)
     except Exception as e:
         print(f"[Error] Invalid URL: {e}")
         return
 
-    # Step 3 - Scrape Jobs
     print("[Hiring] Starting browser automation...")
     jobs = await fetch_jobs_via_browser(search_state)
     
     if not jobs:
-        print("[Hiring] No jobs found. Exiting.")
+        print("[Hiring] No jobs found.")
         return
 
-    print(f"[Pipeline] Processing {len(jobs)} jobs for scoring...")
+    # Step 4 - Score
+    valid_jobs = [j for j in jobs if j.apply_url and len(j.description) > 50]
+    print(f"[Pipeline] Processing {len(valid_jobs)} jobs for scoring...")
 
-    # Step 4 - Score Jobs (WITH INCREMENTAL SAVING)
     scored = []
     
-    # Pre-filter: only fetch/score jobs that actually have data
-    valid_jobs = [j for j in jobs if j.apply_url and j.description]
-    print(f"[Pipeline] {len(valid_jobs)} jobs have valid descriptions. Scoring now...")
-
     for i, job in enumerate(valid_jobs):
         print(f"[{i+1}/{len(valid_jobs)}] Scoring: {job.title}...", end="\r")
         score, reason = score_job_match(cv_profile_json, job, score_prompt, scoring_mode)
         scored.append((job, score, reason))
         
-        # INCREMENTAL SAVE every 5 jobs
         if (i + 1) % 5 == 0:
             good_matches_temp = [(j, s, r) for (j, s, r) in scored if s >= threshold]
-            
-            # If matches exist, update the file.
             if good_matches_temp:
                 export_jobs_html(good_matches_temp, report_filename)
-            else:
-                # Optional: If you want to know it's trying but finding nothing
-                print(f"[Info] Scored {i+1} jobs. No matches > {threshold} yet.", end="\r")
                 
     print("\n[Pipeline] Scoring complete.")
 
-    # Step 5 - Final Report
     good_matches = [(j, s, r) for (j, s, r) in scored if s >= threshold]
     
-    print(f"[Pipeline] Found {len(good_matches)} jobs above threshold {threshold}.")
-    
     if good_matches:
-        # Final update to ensure everything is captured
         export_jobs_html(good_matches, report_filename)
         send_telegram_message(summarize_jobs(good_matches))
-        print(f"[Success] Done. Report saved to {report_filename}")
+        print(f"[Success] Report saved to {report_filename}")
     else:
         print("No matches met the threshold.")
-        # Write a "No Matches" HTML so the file isn't just the initial skeleton
-        with open(report_filename, "w") as f:
-            f.write(f"<html><body><h1>Job Search Completed</h1><p>No jobs met the threshold ({threshold}). Scored {len(scored)} jobs total.</p></body></html>")
 
 if __name__ == "__main__":
     asyncio.run(main())
