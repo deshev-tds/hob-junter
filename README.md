@@ -3,6 +3,27 @@
 
 This exists because manually browsing job boards is a form of quiet, socially accepted self-harm.
 
+## Modular architecture (current state)
+
+The former 1,200-line `hob-junter.py` is now split into a package for sanity and testing:
+
+- `main.py` – orchestration entrypoint; run with `python main.py`.
+- `hob_junter/config/settings.py` – env + run config loader (`inputs.json`, defaults, thresholds, API keys).
+- `hob_junter/config/prompts.py` – all prompt templates (OCR, profile, scoring, red-team).
+- `hob_junter/core/llm_engine.py` – OpenAI/local LLM wrappers, JSON cleaning, file upload.
+- `hob_junter/core/analyzer.py` – CV OCR/profile build, strategy advisor, scoring, red-team.
+- `hob_junter/core/scraper.py` – Playwright job harvesting, search URL builder, interactive role/exclusion prompts.
+- `hob_junter/core/reporter.py` – Telegram push + HTML report generation/summarization.
+- `hob_junter/utils/helpers.py` – retries, debug printing, safe JSON, CV profile cache helpers.
+- `inputs.json` – user/runtime config.
+- `requirements.txt` – minimal dependencies.
+
+How to use now:
+1) Export `OPENAI_API_KEY` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if you want alerts).  
+2) Update `inputs.json` (CV path, search URL, Sheet ID, thresholds) or answer the prompts on first run.  
+3) `python main.py` (uses Playwright to scrape hiring.cafe, then scores/report).  
+Legacy monolith (`hob-junter.py`/`hob-junter3.4.py`) remains for reference; new development should go through `main.py` and the package modules above.
+
 ## What this is
 
 **Hob Junter** is a personal, ATS-style job matching system that:
