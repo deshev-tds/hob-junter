@@ -69,6 +69,13 @@ EVALUATION PROTOCOL:
 OUTPUT INSTRUCTIONS:
 - Return STRICT JSON ONLY.
 - The "reason" must be professional, evidence-based, and concise.
+- The Score must be an INTEGER between 0 and 100. Adhere to this scale strictly:
+
+SCORING TIER GUIDE:
+-> 0-45 (FATAL MISMATCH): Wrong domain (e.g., Marketing vs Engineering), wrong role (Junior vs VP), or missing critical mandatory skills (e.g., Job needs Embedded C++, Candidate only knows JS).
+-> 46-64 (PARTIAL MATCH): Good archetype but missing specific tech/industry stack match (e.g., Manager role fits, but stack is Java vs Python AND hands-on is required) or industry gap. Likely a "No" unless the market is dry.
+-> 65-89 (STRONG MATCH): The candidate is "Interview Ready". Core competencies, seniority, and stack align well. Minor gaps are teachable. This is a "YES".
+-> 90-100 (UNICORN MATCH): Perfect alignment. Candidate has the right combination of exact job title, years of experience, specific industry knowledge, AND the niche tools required. A "Must Hire".
 
 JSON FORMAT:
 {
