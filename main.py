@@ -179,7 +179,7 @@ async def run_pipeline():
         comp_display = (job.company[:18] + "..") if len(job.company) > 18 else job.company
 
         sys.stdout.write(
-            f"\r\033[K   ⏳ [{bar}] {int(percent)}% ({i+1}/{total_jobs}) | ETA: {eta_str} | Scoring: {comp_display}"
+            f"\r\033[K    [{bar}] {int(percent)}% ({i+1}/{total_jobs}) | ETA: {eta_str} | Scoring: {comp_display}"
         )
         sys.stdout.flush()
 

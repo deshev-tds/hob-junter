@@ -7,7 +7,7 @@ from typing import Any
 def print_phase_header(phase_num: int, title: str):
     """Pretty console header for pipeline phases."""
     print(f"\n\033[34m{'=' * 65}\033[0m")
-    print(f"\033[1;34m 🚀 PHASE {phase_num}/4: {title}\033[0m")
+    print(f"\033[1;34m  PHASE {phase_num}/4: {title}\033[0m")
     print(f"\033[34m{'=' * 65}\033[0m")
 
 

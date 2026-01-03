@@ -8,6 +8,8 @@ __pycache__/
 inputs.json
 client_secret.json
 token.json
+service_account.json
+service_account*.json
 
 # Run artifacts
 cv_profile.json
@@ -28,3 +30,4 @@ job_history.json
 cv_full_text.txt
 cv_full_text.txt
 jobs.db
+hob_junter/config/settings.py
