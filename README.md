@@ -28,7 +28,7 @@ How to use now:
     ```bash
 python -c "import sqlite3; conn = sqlite3.connect('jobs.db'); conn.execute('CREATE TABLE jobs (job_id TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, score INTEGER, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); conn.commit(); conn.close(); print('Database initialized.')"
     ```
-    
+
 Legacy monolith (`hob-junter.py`/`hob-junter3.4.py`) remains for reference; new development should go through `main.py` and the package modules above.
 
 ## What this is
