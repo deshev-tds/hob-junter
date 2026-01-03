@@ -171,11 +171,17 @@ class SheetsClient:
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-            elif os.path.exists('../../Downloads/google_credentials.json'):
-                flow = InstalledAppFlow.from_client_secrets_file('../../Downloads/google_credentials.json', SCOPES)
-                creds = flow.run_local_server(port=0)
             else:
-                return # No auth possible
+                cred_candidates = [
+                    os.path.expanduser("~/Downloads/google_credentials.json"),
+                    "client_secret.json"
+                ]
+                cred_file = next((p for p in cred_candidates if os.path.exists(p)), None)
+                if not cred_file:
+                    print(" [!] Sheets auth skipped: no Google credentials file found.")
+                    return
+                flow = InstalledAppFlow.from_client_secrets_file(cred_file, SCOPES)
+                creds = flow.run_local_server(port=0)
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
         self.service = build('sheets', 'v4', credentials=creds)
@@ -311,11 +317,20 @@ class HobJunterEngine:
 
     def setup(self):
         print(">>> HOB JUNTER 3.4: PLATINUM EDITION <<<")
-        if not self.cfg.get("openai_key") or not self.cfg.get("google_api_key"):
-            self.cfg["openai_key"] = input("OpenAI Key: ").strip()
-            self.cfg["google_api_key"] = input("Google API Key: ").strip()
-            self.cfg["google_cse_id"] = input("Google CX ID: ").strip()
-            save_config(self.cfg)
+        def prompt_and_store(key, prompt_text):
+            current = (self.cfg.get(key) or "").strip()
+            if current: return False
+            val = ""
+            while not val:
+                val = input(prompt_text).strip()
+            self.cfg[key] = val
+            return True
+
+        changed = False
+        changed |= prompt_and_store("openai_key", "OpenAI Key: ")
+        changed |= prompt_and_store("google_api_key", "Google API Key: ")
+        changed |= prompt_and_store("google_cse_id", "Google CX ID: ")
+        if changed: save_config(self.cfg)
         
         self.client = OpenAI(api_key=self.cfg["openai_key"])
         self.google_service = build("customsearch", "v1", developerKey=self.cfg["google_api_key"])
