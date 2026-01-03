@@ -23,7 +23,14 @@ How to use now:
 2) Update `inputs.json` (CV path, search URL, Sheet ID, thresholds) or answer the prompts on first run.  
 3) `python main.py` (uses Playwright to scrape hiring.cafe, then scores/report).  
 
+
 **Create a small SQLIte DB to keep your applications state**
+
+1.  **Install:**
+    ```bash
+    pip install openai google-api-python-client google-auth-oauthlib requests trafilatura pypdf beautifulsoup4
+    ```
+
 
     ```bash
 python -c "import sqlite3; conn = sqlite3.connect('jobs.db'); conn.execute('CREATE TABLE jobs (job_id TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, score INTEGER, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); conn.commit(); conn.close(); print('Database initialized.')"
