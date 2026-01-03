@@ -273,6 +273,12 @@ async def fetch_jobs_via_browser(search_state: Dict[str, Any], debug: bool = Fal
 
     print(f"[Hiring] Opening {url}")
     await page.goto(url, wait_until="networkidle")
+    try:
+        await page.wait_for_selector("body", timeout=10000)
+    except Exception:
+        debug_print("[Playwright] Body not ready after navigation", enabled=debug)
+    await page.wait_for_load_state("networkidle")
+    await page.wait_for_timeout(1500)
 
     try:
         banner_close = page.locator('button[aria-label="Close banner"]')
@@ -283,12 +289,23 @@ async def fetch_jobs_via_browser(search_state: Dict[str, Any], debug: bool = Fal
 
     print("[Hiring] Scrolling to load all JSON pages...")
     stagnant_height = 0
-    last_height = await page.evaluate("document.body.scrollHeight")
+    try:
+        last_height = await page.evaluate("() => document.body ? document.body.scrollHeight : 0")
+    except Exception as exc:  # noqa: BLE001
+        debug_print(f"[Playwright] Initial scrollHeight failed: {exc}", enabled=debug)
+        last_height = 0
 
     for _ in range(60):
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-        await page.wait_for_timeout(1500)
-        new_height = await page.evaluate("document.body.scrollHeight")
+        if page.is_closed():
+            debug_print("[Playwright] Page closed during scroll", enabled=debug)
+            break
+        try:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await page.wait_for_timeout(1500)
+            new_height = await page.evaluate("() => document.body ? document.body.scrollHeight : 0")
+        except Exception as exc:  # noqa: BLE001
+            debug_print(f"[Playwright] Scroll evaluate failed: {exc}", enabled=debug)
+            break
 
         if new_height <= last_height:
             stagnant_height += 1
