@@ -92,7 +92,7 @@ This just returns the favor.
 - Local LLMs tested primarily with **Mixtral 8x7B and qwen3 VI 30B variants** (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
 - You can switch to OpenAI for analysis so you hog Sam Altman's GPUs instead of yours (change to "scoring_mode": "openai" in inputs.json). 
 - Static HTML output for review and decision-making
-- High-scores are pushed to a Google Spreadsheet (defined during wizard.py interactive setup, or in inputs.json manually) together with job details and direct links to apply. 
+- High-scores are pushed to a Google Spreadsheet (defined during wizard.py interactive setup, or in inputs.json manually) together with job details and direct links to apply. This will serve as your "CRM" during your job hunting cycle. 
 - A SQLite database keeps the state of what has already been scraped so we dont' bother looking into it again. 
 - As of Jan 4, 2026: **Server Ready!** Hob Junter is now designed to run **unattended** on a VPS (e.g., Hetzner, DigitalOcean, etc.).
 - **Headless-Headful Browsing:** Uses a headful Playwright browser inside a virtual framebuffer (`xvfb`) to bypass the some aspects of the engineering reality (If you know, you know.) while running on a server without a monitor.  This one is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
