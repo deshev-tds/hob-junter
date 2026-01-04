@@ -23,6 +23,9 @@ from hob_junter.core.scraper import (
     parse_hiring_cafe_search_state_from_url,
     select_roles_interactive,
 )
+# --- NEW IMPORT ---
+from hob_junter.core.linkedin import fetch_linkedin_jobs
+# ------------------
 from hob_junter.core.sheets import get_gspread_client, log_job_to_sheet 
 from hob_junter.utils.helpers import (
     load_cv_profile_from_json,
@@ -132,32 +135,60 @@ async def run_pipeline():
         search_url = construct_search_url(
             final_roles, cv_profile_data.get("locations", []), is_tech_industry, final_exclusions
         )
-        print(f"[Config] Generated URL: {search_url}")
+        print(f"[Config] Generated Hiring.Cafe URL: {search_url}")
 
-        if not search_url:
-            return
+    # Phase 3 - Harvesting (Hiring Cafe)
+    print_phase_header(3, "DEPLOYING SCRAPERS")
+    jobs = []
 
-    # Phase 3 - Parse & Scrape
-    print_phase_header(3, "DEPLOYING SCRAPERS (BROWSER AUTOMATION)")
-    try:
-        search_state = parse_hiring_cafe_search_state_from_url(search_url)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[Error] Invalid URL: {exc}")
-        return
+    # 3.1 Hiring Cafe (Browser)
+    if search_url:
+        try:
+            print("[Hiring.Cafe] Starting browser automation...")
+            search_state = parse_hiring_cafe_search_state_from_url(search_url)
+            hc_jobs = await fetch_jobs_via_browser(search_state, debug=debug)
+            jobs.extend(hc_jobs)
+        except Exception as exc:
+            print(f"[Hiring.Cafe] Skipped or Failed: {exc}")
 
-    print("[Hiring] Starting browser automation...")
-    jobs = await fetch_jobs_via_browser(search_state, debug=debug)
+    # 3.2 LinkedIn (Bright Data API)
+    # --- ENTERPRISE INTEGRATION ---
+    if run_settings.linkedin_enabled and run_settings.brightdata_api_token:
+        print_phase_header(3.5, "LINKEDIN HARVESTER (ENTERPRISE API)")
+        
+        # Determine query from strategy or fallback
+        li_query = "Software Engineer"
+        if strategy_data.get("final_roles"):
+            # Use the first 2 roles combined or just the first one
+            li_query = " ".join(strategy_data["final_roles"][:1])
+        
+        # Use location from CV or default to Bulgaria
+        li_locs = cv_profile_data.get("locations", ["Bulgaria"])
+        
+        # CALL THE NEW MODULE
+        li_jobs = fetch_linkedin_jobs(
+            query=li_query,
+            locations=li_locs,
+            limit=run_settings.linkedin_limit or 5
+        )
+        
+        if li_jobs:
+            print(f"[Pipeline] Merging {len(li_jobs)} LinkedIn jobs into main feed...")
+            jobs.extend(li_jobs)
+    else:
+        if run_settings.linkedin_enabled:
+            print("[Pipeline] LinkedIn enabled but NO API TOKEN found in settings.")
+    # -----------------------------
 
     if not jobs:
-        print("[Hiring] No jobs found.")
+        print("[Summary] No jobs found anywhere. Exiting.")
         return
 
     # Phase 4 - Score & Red Team
     print_phase_header(4, "SCORING & RED TEAM ANALYSIS")
     valid_jobs = [j for j in jobs if j.apply_url and len(j.description) > 50]
     
-    # --- FILTERING LOGIC (UX FIX) ---
-    print(f"[Pipeline] Syncing {len(valid_jobs)} jobs with Database...")
+    print(f"[Pipeline] Syncing {len(valid_jobs)} candidates with Database...")
     
     new_jobs = []
     known_count = 0
@@ -169,16 +200,16 @@ async def run_pipeline():
             new_jobs.append(job)
             
     # --- REPORT STATS ---
-    print(f"\n   [+] FEED:      {len(valid_jobs)} jobs found online.")
-    print(f"   [-] KNOWN:     {known_count} jobs skipped (Already in DB).")
-    print(f"   [!] NEW:       {len(new_jobs)} job(s) queued for analysis.\n")
+    print(f"\n   [+] TOTAL FEED:  {len(valid_jobs)}")
+    print(f"   [-] ALREADY SEEN: {known_count}")
+    print(f"   [!] QUEUED FOR AI: {len(new_jobs)}\n")
     
     if not new_jobs:
         print("[Summary] System is up to date. No new jobs to process.")
         db_conn.close()
         return
 
-    print(f"[Pipeline] Processing {len(new_jobs)} new candidates...\n")
+    print(f"[Pipeline] Analyzing {len(new_jobs)} candidates...\n")
 
     scored = []
     start_time = time.time()
@@ -206,11 +237,13 @@ async def run_pipeline():
 
         comp_display = (job.company[:18] + "..") if len(job.company) > 18 else job.company
 
+        # Update progress bar
         sys.stdout.write(
             f"\r\033[K    [{bar}] {int(percent)}% ({i+1}/{total_new}) | ETA: {eta_str} | Scoring: {comp_display}"
         )
         sys.stdout.flush()
 
+        # --- SCORING ---
         score, reason = score_job_match(
             client=client,
             cv_profile_json=cv_profile_json,
@@ -221,9 +254,10 @@ async def run_pipeline():
         )
 
         red_team_data = {}
+        # --- RED TEAM ---
         if score >= run_settings.threshold and cv_text_raw:
-            sys.stdout.write(f"\n\r\033[K   HIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\n")
-            sys.stdout.write("   [Red Team] Engaged... (This takes a moment)\n")
+            sys.stdout.write(f"\n\r\033[K   [MATCH] {score}/100: {job.company} - {job.title}\n")
+            sys.stdout.write("   [Red Team] Audit in progress...\n")
             sys.stdout.flush()
 
             red_team_data = red_team_analysis(
@@ -233,8 +267,8 @@ async def run_pipeline():
                 local_llm_url=LOCAL_LLM_URL,
                 client=client
             )
-
-            sys.stdout.write("   [Red Team] Done.\n")
+            # Log back to progress line
+            sys.stdout.write("   [Red Team] Complete.\n")
 
         scored.append((job, score, reason, red_team_data))
 
@@ -243,18 +277,16 @@ async def run_pipeline():
 
         # -- SHEETS SAVE (REAL-TIME) --
         if sheets_client and score >= run_settings.threshold:
-            sys.stdout.write(f"   [Sheet] Logging to Google... ")
-            sys.stdout.flush()
             log_job_to_sheet(sheets_client, run_settings.spreadsheet_id, job, score, reason)
-            sys.stdout.write("Done.\n")
             sheet_count += 1
 
+        # Intermediate report save
         if (i + 1) % 5 == 0:
             good_matches_temp = [x for x in scored if x[1] >= run_settings.threshold]
             if good_matches_temp:
                 export_jobs_html(good_matches_temp, strategy_data, report_filename)
 
-    print("\n\n[Pipeline] Scoring complete.")
+    print("\n\n[Pipeline] Analysis complete.")
     db_conn.close()
 
     good_matches = [x for x in scored if x[1] >= run_settings.threshold]

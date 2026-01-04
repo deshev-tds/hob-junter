@@ -42,10 +42,16 @@ class RunSettings:
     profile_prompt: str
     score_prompt: str
     scoring_mode: str
-    red_team_mode: str  # <--- NEW FIELD
+    red_team_mode: str
     debug: bool
     db_path: str
     google_creds_path: str
+    # --- NEW LINKEDIN & BRIGHT DATA CONFIG ---
+    linkedin_enabled: bool
+    proxy_url: Optional[str]
+    linkedin_limit: int
+    brightdata_api_token: Optional[str]
+    brightdata_zone: Optional[str]
 
 
 def load_env_settings() -> EnvSettings:
@@ -83,10 +89,16 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
     profile_prompt = config.get("profile_prompt") or PROFILE_PROMPT_DEFAULT
     score_prompt = config.get("score_prompt") or SCORE_PROMPT_DEFAULT
     scoring_mode = config.get("scoring_mode") or "local"
-    # NEW: Default Red Team mode to Scoring mode if not set
     red_team_mode = config.get("red_team_mode") or scoring_mode
     db_path = config.get("db_path") or DEFAULT_DB_PATH
     google_creds_path = config.get("google_creds_path") or DEFAULT_CREDS_PATH
+
+    # --- NEW LINKEDIN & BRIGHT DATA CONFIG ---
+    linkedin_enabled = config.get("linkedin_enabled", False)
+    proxy_url = config.get("proxy_url", "")
+    linkedin_limit = config.get("linkedin_limit", 20)
+    brightdata_api_token = config.get("brightdata_api_token", "")
+    brightdata_zone = config.get("brightdata_zone", "web_unlocker1")
 
     if not cv_path:
         cv_path = input("Path to CV PDF: ").strip()
@@ -110,9 +122,14 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         "profile_prompt": profile_prompt,
         "score_prompt": score_prompt,
         "scoring_mode": scoring_mode,
-        "red_team_mode": red_team_mode,  # <--- SAVE TO CONFIG
+        "red_team_mode": red_team_mode,
         "db_path": db_path,
         "google_creds_path": google_creds_path,
+        "linkedin_enabled": linkedin_enabled,
+        "proxy_url": proxy_url,
+        "linkedin_limit": linkedin_limit,
+        "brightdata_api_token": brightdata_api_token,
+        "brightdata_zone": brightdata_zone,
     }
 
     try:
@@ -131,8 +148,13 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         profile_prompt=profile_prompt,
         score_prompt=score_prompt,
         scoring_mode=scoring_mode,
-        red_team_mode=red_team_mode,  # <--- RETURN IN SETTINGS
+        red_team_mode=red_team_mode,
         debug=bool(debug_cfg),
         db_path=db_path,
         google_creds_path=google_creds_path,
+        linkedin_enabled=linkedin_enabled,
+        proxy_url=proxy_url,
+        linkedin_limit=linkedin_limit,
+        brightdata_api_token=brightdata_api_token,
+        brightdata_zone=brightdata_zone,
     )

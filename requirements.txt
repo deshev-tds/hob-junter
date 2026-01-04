@@ -5,3 +5,5 @@ google-auth
 google-auth-oauthlib
 google-api-python-client
 gspread
+python-jobspy
+pandas
