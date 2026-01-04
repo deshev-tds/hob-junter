@@ -9,16 +9,16 @@ def print_header(text):
     print(f"{'='*60}\033[0m")
 
 def print_info(text):
-    print(f" ℹ️  \033[37m{text}\033[0m")
+    print(f"  \033[37m{text}\033[0m")
 
 def print_warn(text):
-    print(f" ⚠️  \033[33m{text}\033[0m")
+    print(f"   \033[33m{text}\033[0m")
 
 def prompt_user(question, default=None):
     if default:
-        prompt_text = f"\n👉 {question} \033[90m[{default}]\033[0m: "
+        prompt_text = f"\n {question} \033[90m[{default}]\033[0m: "
     else:
-        prompt_text = f"\n👉 {question}: "
+        prompt_text = f"\n {question}: "
     
     val = input(prompt_text).strip()
     if not val and default is not None:
