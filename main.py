@@ -23,7 +23,6 @@ from hob_junter.core.scraper import (
     parse_hiring_cafe_search_state_from_url,
     select_roles_interactive,
 )
-# --- FIX 1: ADDED MISSING IMPORTS FOR SHEETS MANIPULATIONS ---
 from hob_junter.core.sheets import get_gspread_client, log_job_to_sheet 
 from hob_junter.utils.helpers import (
     load_cv_profile_from_json,
@@ -39,7 +38,7 @@ async def run_pipeline():
     # DB Connection init
     db_conn = get_db_connection(run_settings.db_path)
 
-    # --- FIX 2: ADDED SHEETS INITIALIZATION ---
+    # Sheets Init
     sheets_client = None
     if run_settings.spreadsheet_id and os.path.exists(run_settings.google_creds_path):
         sheets_client = get_gspread_client(run_settings.google_creds_path)
@@ -100,12 +99,7 @@ async def run_pipeline():
                 print(f"[CV] Warning: Failed to cache raw text: {exc}")
 
             print("[CV] Building profile...")
-            cv_profile_json = build_cv_profile(client, run_settings.profile_prompt) # Correction: cv_text_raw arg missing in your original file, but fixed in previous turns. Assuming helper build_cv_profile signature match.
-            # Wait, build_cv_profile(client, cv_text_raw, prompt) is correct signature in analyzer.py
-            # Checking line 98 in provided main.py: cv_profile_json = build_cv_profile(client, cv_text_raw, run_settings.profile_prompt)
-            # Correcting line below to match exactly provided file + functionality.
             cv_profile_json = build_cv_profile(client, cv_text_raw, run_settings.profile_prompt)
-            
             save_cv_profile_to_file(cv_profile_json, run_settings.cv_profile_path)
 
     cv_profile_data = json.loads(cv_profile_json)
@@ -167,12 +161,12 @@ async def run_pipeline():
     start_time = time.time()
     total_jobs = len(valid_jobs)
     
-    # --- INITIALIZE COUNTER ---
     sheet_count = 0
 
     for i, job in enumerate(valid_jobs):
         # -- DB CHECK START --
-        if is_job_processed(db_conn, job.job_id):
+        # FIX: Passing the full job object, NOT just job_id
+        if is_job_processed(db_conn, job):
              sys.stdout.write(f"\r\033[K   ⏭ [Skipped - Already Seen] {job.company} - {job.title}")
              sys.stdout.flush()
              continue
@@ -217,7 +211,6 @@ async def run_pipeline():
             sys.stdout.write("   [Red Team] Engaged... (This takes a moment)\n")
             sys.stdout.flush()
 
-            # --- CHANGED: Now using Red Team Mode and Client ---
             red_team_data = red_team_analysis(
                 cv_full_text=cv_text_raw, 
                 job=job, 
