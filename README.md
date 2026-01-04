@@ -163,6 +163,33 @@ I strongly suggest that you start with wizard.py. It's a wizard, Harry, etc. and
    xvfb-run --server-args="-screen 0 1920x1080x24" python3 main.py
     ```
 
+
+## Building a Windows executable (very optional, untested, no tengo windows, but "should work"...)
+
+If you prefer a standalone `.exe` file instead of running Python scripts, you can compile the project yourself using `PyInstaller`.
+
+**Prerequisites:**
+1. Python 3.11+ installed.
+2. Dependencies installed (`pip install -r requirements.txt`).
+3. PyInstaller installed (`pip install pyinstaller`).
+
+**Build Command:**
+Run the following command in the project root. We use `--onedir` to ensure stability with external configuration files and browser binaries.
+
+   ```powershell
+   pyinstaller --noconfirm --onedir --console --name "HobJunter" --add-data "hob_junter/config;hob_junter/config" main.py
+   ```
+
+Note: The command above assumes a Windows environment (using ; as a path separator). If building on Linux/Mac, use : instead of ; in the --add-data argument.
+
+**Post-Build Instructions:**
+
+- Go to the newly created dist/HobJunter folder.
+- Crucial: Copy your inputs.json and service_account.json (if using Sheets) into this folder, right next to HobJunter.exe.
+- Create a shortcut to HobJunter.exe on your Desktop (DO NOT drag the .exe out of the folder, or it will break).
+
+Note on Antivirus: Since this is an unsigned executable that automates a browser, Windows Defender and the likes of it might flag it. This is a false positive typical for PyInstaller apps. You may need to add an exclusion for the entire folder.
+
 ## Ethics & disclaimers
 
 - This does not auto-apply anywhere.
