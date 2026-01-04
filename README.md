@@ -81,37 +81,39 @@ This just returns the favor.
 ## Architecture & execution notes
 
 - Python-based pipeline
-- Local LLMs tested primarily with **Mixtral 8x7B variants** (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
+- Local LLMs tested primarily with **Mixtral 8x7B and qwen3 VI 30B variants** (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
 - You can switch to OpenAI for analysis so you hog Sam Altman's GPUs and not yours (change to "scoring_mode": "openai" in inputs.json). 
 - Static HTML output for review and decision-making
-- Designed to run **attended**
-- Uses a **headful Playwright browser** when required to deal with real-world content delivery quirks  
-  (If you know, you know.)
-
-This is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
+- As of Jan 4, 2026: **Server Ready -** Designed to run **unattended** on a VPS (e.g., Hetzner, DigitalOcean, etc.).
+- **Headless-Headful Browsing:** Uses a headful Playwright browser inside a virtual framebuffer (`xvfb`) to bypass... Engineering reality (If you know, you know.) while running on a server without a monitor.  This one is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
 
 The system favors:
 - predictability over cleverness
 - explicit thresholds over vague “fit”
 - boring reliability over architectural purity
 
-No cloud magic required (except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model. 
+No cloud magic required (except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model(s). 
 
 
 ## Modular architecture (current state)
 
 The former 1,200-line `hob-junter.py` is now split into a package for sanity and testing:
 
-- `main.py` – orchestration entrypoint; run with `python main.py`.
-- `hob_junter/config/settings.py` – env + run config loader (`inputs.json`, defaults, thresholds, API keys).
-- `hob_junter/config/prompts.py` – all prompt templates (OCR, profile, scoring, red-team).
-- `hob_junter/core/llm_engine.py` – OpenAI/local LLM wrappers, JSON cleaning, file upload.
-- `hob_junter/core/analyzer.py` – CV OCR/profile build, strategy advisor, scoring, red-team.
-- `hob_junter/core/scraper.py` – Playwright job harvesting, search URL builder, interactive role/exclusion prompts.
-- `hob_junter/core/reporter.py` – Telegram push + HTML report generation/summarization.
-- `hob_junter/utils/helpers.py` – retries, debug printing, safe JSON, CV profile cache helpers.
-- `inputs.json` – user/runtime config.
-- `requirements.txt` – minimal dependencies.
+- `main.py` – Orchestration entrypoint. Run this.
+- `catch_up_db.py` – Utility to fast-scrape jobs and mark them as "seen" in the DB without spending tokens on scoring (useful for initialization).
+- `restore_db_final.py` – Emergency utility to mine `llm_traffic.log` and resurrect jobs if the DB explodes.
+- `migrate_db.py` – Schema migration tool if you update the code and the DB breaks.
+- `hob_junter/config/settings.py` – Env + run config loader.
+- `hob_junter/config/prompts.py` – All prompt templates (OCR, profile, scoring, red-team).
+- `hob_junter/core/llm_engine.py` – LLM wrappers, traffic logging.
+- `hob_junter/core/analyzer.py` – CV OCR, strategy advisor, scoring logic.
+- `hob_junter/core/scraper.py` – Playwright job harvesting.
+- `hob_junter/core/database.py` – SQLite logic and deduplication checks.
+- `hob_junter/core/sheets.py` – Real-time logging to Google Sheets.
+- `hob_junter/core/reporter.py` – Telegram push + HTML report generation.
+- `inputs.json` – User/runtime config.
+
+Legacy monoliths (`hob-junter.py`/`hob-junter3.4.py`) remains for reference; new development should go through `main.py` and the package modules above.
 
 How to use now:
 1) Export `OPENAI_API_KEY` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if you want alerts).  
@@ -126,12 +128,30 @@ How to use now:
     ```bash
     python -c "import sqlite3, os; [os.remove('jobs.db') if os.path.exists('jobs.db') else None]; conn = sqlite3.connect('jobs.db'); conn.execute('CREATE TABLE jobs (job_id TEXT PRIMARY KEY, title TEXT, company TEXT, url TEXT, score INTEGER, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, notes TEXT)'); conn.commit(); conn.close(); print('jobs.db purged and re-initialized with latest schema (v2).')"
     ```
+2. **Install Dependencies:**
 
-Legacy monoliths (`hob-junter.py`/`hob-junter3.4.py`) remains for reference; new development should go through `main.py` and the package modules above.
+   ```bash
+   pip install -r requirements.txt
+   playwright install chromium
+   playwright install-deps  # Critical on Linux to install system libraries (libgbm, etc.)
+    ```
 
-2.  **Next steps:**
+3. **Install xvfb**
+
+   ```bash
+   sudo apt-get install xvfb
+    ```
+... or address this with your package manager, depending on your distro. 
+
+4.  **Next steps:**
 
 I strongly suggest that you start with wizard.py. It's a wizard, Harry, etc. and will help you better understand the core prerequisites. It will also very kindly generate the correct inputs.json for your setup. 
+
+Then go hunting: 
+
+    ```bash
+    xvfb-run --server-args="-screen 0 1920x1080x24" python3 main.py
+    ```
 
 ## Ethics & disclaimers
 
