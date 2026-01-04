@@ -9,23 +9,24 @@ This exists because manually browsing job boards is a form of quiet, socially ac
 
 - pulls job listings from job boards (currently hiring.cafe),
 - normalizes and deduplicates them,
-- scores them against a CV using a local LLM,
+- scores them against a CV using a local or cloud LLM,
 - aggressively filters out low-signal roles,
-- and exposes only jobs that are statistically worth attention.
+- and exposes only jobs that are statistically worth the attention.
 
-Finding a new job is not a vibes and giigle process, it's a numbers (and data, and some intuition...) process. This tools does only: 
+Finding a new job is not a vibes and giggles process, it's a numbers (and data, and some intuition...) process. This tools does only: 
 
 - scores,
 - reasons,
 - and produces direct apply links.
 
+
 ## What this is not
 
-- Not a SaaS AI mega-startup that will 100% GET YOU HIRED OR YOUR MONEY BACK ($99.99/year).
+- Not a SaaS AI uber-mega-startup that will 100% GET YOU HIRED OR YOUR MONEY BACK ($99.99/year)...
 - Not a replacement for recruiters, HR, or career consultants.
 - Not a promise of interviews.
 - Not polite.
-- Not optimized for feelings (I honestly tried - didn't work).
+- Not optimized for feelings (I tried - didn't work).
 
 It will absolutely tell you:
 > “This role wants Python, finance, and marketing analytics. You have none of that. Move on.”
@@ -34,21 +35,22 @@ And it will do so calmly and consistently.
 
 ## How it works (non-marketing version)
 
-1. A search URL is constructed for hiring.cafe (they are the LAST cool place for folks looking to change careers. Please love them and use this type of tools sparingly <3 )
-   (job titles + keywords + mild optimism).  
-   Currently this can be provided manually. Also, extracting keywords directly from the CV is tested and confirmed as working - if you don't provide a url in the json file, you will be asked questions interactively so it is constructed live for you.
-   You also get a "bonus" review of your CV and GPT pings you back in the terminal, suggesting what roles to apply to have better chances. You can either listen to it, or list your own in the interactive prompt. Those will be used to construct the job aggregator URL correctly. 
+1. A search URL is constructed for hiring.cafe (they are the LAST cool place for folks looking to change careers. Please love them and use this type of tools sparingly <3 ) - it includes job titles + keywords + mild optimism. 
+   
+2. Currently this can be provided manually in inputs.json. Also, extracting keywords directly from the CV is tested and confirmed as working - if you don't provide a url in the json file, you will be asked questions interactively so it is constructed live for you within the UI - I would suggest using this and leaving the field in inputs.json empty (="")
 
-3. Job listings are fetched, normalized, and deduplicated.
+3. You also get a "bonus" review of your CV and GPT pings you back in the terminal, suggesting what roles to apply to have better chances. You can either listen to it, or list your own in the interactive prompt. Be mindful of those suggestions - sometime you will get surprised how wider your horizons can be given your experience, and how many roles you could really fit on top of the ones you are used to. Those will be used to construct the job aggregator URL correctly in the next step.  
 
-4. Each role is evaluated against a CV using a **local LLM**.  
+4. Job listings are fetched, normalized, and deduplicated.
+
+5. Each role is evaluated against a CV using a **local LLM**.  
    Optionally, you can pass an `OPENAI_API_KEY` and ask the script to bother Sam Altman instead of your own GPU.
 
-5. Each job receives:
+6. Each job receives:
    - a numeric score (0–100),
    - a short, explicit justification explaining the score.
 
-6. Anything below a hard threshold is discarded **before** it reaches the UI.  
+7. Anything below a hard threshold is discarded **before** it reaches the UI.  
    The default cutoff is **65**, configurable via `inputs.json`.
 
 If it doesn’t make the cut, it does not exist.
@@ -69,7 +71,13 @@ the same systems responsible for 50–60% of CVs never reaching human eyes.
 
 The difference is that here, the rules are visible.
 
-## Why this exists
+## Red Team Analysis (The "Why You Won't Get It" Engine)
+
+If a job scores above the high threshold (default **85**), the system triggers a secondary audit: **The Red Team**. 
+This agent adopts the persona of a cynical, risk-averse hiring manager looking for reasons to *reject* you. It scans the "perfect" matches for hidden gaps, seniority mismatches, or missing domain-specific jargon that the primary scorer might have overlooked. It outputs a **Risk Assessment** (Low/Medium/High) and a brutal one-sentence warning explaining exactly how you might fail the interview.
+*Why?* Because confidence is good, but knowing your weak spots is profitable. And sometimes it's worth anticipating those "warnings" in advance in your application documents, or at least be ready to address such topics during screenings and interviews. 
+
+## Why this engire monstrosity exists?
 
 Because:
 - job searching is a numbers game,
@@ -82,17 +90,19 @@ This just returns the favor.
 
 - Python-based pipeline
 - Local LLMs tested primarily with **Mixtral 8x7B and qwen3 VI 30B variants** (Gemma 27B was tested and rejected for being *aggressively polite* and scoring everything 95–100)
-- You can switch to OpenAI for analysis so you hog Sam Altman's GPUs and not yours (change to "scoring_mode": "openai" in inputs.json). 
+- You can switch to OpenAI for analysis so you hog Sam Altman's GPUs instead of yours (change to "scoring_mode": "openai" in inputs.json). 
 - Static HTML output for review and decision-making
-- As of Jan 4, 2026: **Server Ready -** Designed to run **unattended** on a VPS (e.g., Hetzner, DigitalOcean, etc.).
-- **Headless-Headful Browsing:** Uses a headful Playwright browser inside a virtual framebuffer (`xvfb`) to bypass... Engineering reality (If you know, you know.) while running on a server without a monitor.  This one is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
+- High-scores are pushed to a Google Spreadsheet (defined during wizard.py interactive setup, or in inputs.json manually) together with job details and direct links to apply. 
+- A SQLite database keeps the state of what has already been scraped so we dont' bother looking into it again. 
+- As of Jan 4, 2026: **Server Ready!** Hob Junter is now designed to run **unattended** on a VPS (e.g., Hetzner, DigitalOcean, etc.).
+- **Headless-Headful Browsing:** Uses a headful Playwright browser inside a virtual framebuffer (`xvfb`) to bypass the some aspects of the engineering reality (If you know, you know.) while running on a server without a monitor.  This one is a tactical choice, not a philosophical stance. Don't blame me, blame... Well, don't blame anyone really. It'd just be like that. 
 
 The system favors:
 - predictability over cleverness
 - explicit thresholds over vague “fit”
 - boring reliability over architectural purity
 
-No cloud magic required (except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model(s). 
+No cloud magic required, except for the occasional OpenAI call. No vendor lock-in is intended - you can live peacefuly with your local model(s). 
 
 
 ## Modular architecture (current state)
