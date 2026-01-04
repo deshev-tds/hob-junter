@@ -147,10 +147,10 @@ How to use now:
 
 I strongly suggest that you start with wizard.py. It's a wizard, Harry, etc. and will help you better understand the core prerequisites. It will also very kindly generate the correct inputs.json for your setup. 
 
-Then go hunting: 
+5. **Go hunting:**
 
-    ```bash
-    xvfb-run --server-args="-screen 0 1920x1080x24" python3 main.py
+   ```bash
+   xvfb-run --server-args="-screen 0 1920x1080x24" python3 main.py
     ```
 
 ## Ethics & disclaimers
