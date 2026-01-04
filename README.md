@@ -164,7 +164,7 @@ I strongly suggest that you start with wizard.py. It's a wizard, Harry, etc. and
     ```
 
 
-## Building a Windows executable (very optional, untested, no tengo windows, but "should work"...)
+## Building a Windows executable (very optional, untested, no tengo windows para probarlo, but "should work"...)
 
 If you prefer a standalone `.exe` file instead of running Python scripts, you can compile the project yourself using `PyInstaller`.
 
