@@ -127,7 +127,7 @@ Legacy monoliths (`hob-junter.py`/`hob-junter3.4.py`) remains for reference; new
 
 How to use now:
 1) Export `OPENAI_API_KEY` (plus `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` if you want alerts).  
-2) Update `inputs.json` (CV path, search URL, Sheet ID, thresholds) or answer the prompts on first run.  
+2) Update `inputs.json` (CV path, search URL, Sheet ID, thresholds) or answer the prompts on first run of wizard.py.  
 3) `python main.py` (uses Playwright to scrape hiring.cafe, then scores/report).  
 
 
