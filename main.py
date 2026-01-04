@@ -155,44 +155,59 @@ async def run_pipeline():
     # Phase 4 - Score & Red Team
     print_phase_header(4, "SCORING & RED TEAM ANALYSIS")
     valid_jobs = [j for j in jobs if j.apply_url and len(j.description) > 50]
-    print(f"[Pipeline] Processing {len(valid_jobs)} jobs for scoring...\n")
+    
+    # --- FILTERING LOGIC (UX FIX) ---
+    print(f"[Pipeline] Syncing {len(valid_jobs)} jobs with Database...")
+    
+    new_jobs = []
+    known_count = 0
+    
+    for job in valid_jobs:
+        if is_job_processed(db_conn, job):
+            known_count += 1
+        else:
+            new_jobs.append(job)
+            
+    # --- REPORT STATS ---
+    print(f"\n   [+] FEED:      {len(valid_jobs)} jobs found online.")
+    print(f"   [-] KNOWN:     {known_count} jobs skipped (Already in DB).")
+    print(f"   [!] NEW:       {len(new_jobs)} job(s) queued for analysis.\n")
+    
+    if not new_jobs:
+        print("[Summary] System is up to date. No new jobs to process.")
+        db_conn.close()
+        return
+
+    print(f"[Pipeline] Processing {len(new_jobs)} new candidates...\n")
 
     scored = []
     start_time = time.time()
-    total_jobs = len(valid_jobs)
+    total_new = len(new_jobs)
     
     sheet_count = 0
 
-    for i, job in enumerate(valid_jobs):
-        # -- DB CHECK START --
-        # FIX: Passing the full job object, NOT just job_id
-        if is_job_processed(db_conn, job):
-             sys.stdout.write(f"\r\033[K   ⏭ [Skipped - Already Seen] {job.company} - {job.title}")
-             sys.stdout.flush()
-             continue
-        # -- DB CHECK END --
-        
+    for i, job in enumerate(new_jobs):
         elapsed = time.time() - start_time
         processed_count = i
 
         if processed_count > 0:
             avg_time_per_job = elapsed / processed_count
-            remaining_jobs = total_jobs - processed_count
+            remaining_jobs = total_new - processed_count
             est_remaining_seconds = avg_time_per_job * remaining_jobs
             mins, secs = divmod(int(est_remaining_seconds), 60)
             eta_str = f"{mins}m {secs}s"
         else:
             eta_str = "Calc..."
 
-        percent = ((i + 1) / total_jobs) * 100
+        percent = ((i + 1) / total_new) * 100
         bar_length = 25
-        filled_length = int(bar_length * (i + 1) // total_jobs)
-        bar = "█" * filled_length + "░" * (bar_length - filled_length)
+        filled_length = int(bar_length * (i + 1) // total_new)
+        bar = "=" * filled_length + "-" * (bar_length - filled_length)
 
         comp_display = (job.company[:18] + "..") if len(job.company) > 18 else job.company
 
         sys.stdout.write(
-            f"\r\033[K    [{bar}] {int(percent)}% ({i+1}/{total_jobs}) | ETA: {eta_str} | Scoring: {comp_display}"
+            f"\r\033[K    [{bar}] {int(percent)}% ({i+1}/{total_new}) | ETA: {eta_str} | Scoring: {comp_display}"
         )
         sys.stdout.flush()
 
@@ -206,8 +221,8 @@ async def run_pipeline():
         )
 
         red_team_data = {}
-        if score >= 85 and cv_text_raw:
-            sys.stdout.write(f"\n\r\033[K   \033[1;32mHIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\033[0m\n")
+        if score >= run_settings.threshold and cv_text_raw:
+            sys.stdout.write(f"\n\r\033[K   HIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\n")
             sys.stdout.write("   [Red Team] Engaged... (This takes a moment)\n")
             sys.stdout.flush()
 
