@@ -55,6 +55,13 @@ And it will do so calmly and consistently.
 
 If it doesn’t make the cut, it does not exist.
 
+### Deterministic multi-strategy search (Jan 2026 update)
+- **Design vs. execution split:** A one-time setup wizard (or `python main.py --setup`) generates `strategies.json` containing 1–3 search strategies; the runtime replays that fixed playlist. `search_url` in `inputs.json` is now legacy/optional.
+- **Validated departments only:** Strategies must pick departments from the hardcoded, Hiring.cafe-validated list: Engineering, Software Development, Information Technology, Data and Analytics, Product Management, Project and Program Management.
+- **Global dedup:** The scraper iterates every strategy URL in one Playwright session but writes jobs into a single set keyed by `job_id` or, if missing, `company|title` to avoid overwriting “empty-id” jobs.
+- **Noise control:** Strategy prompt enforces broad leadership keywords plus explicit exclusions to keep recall high without opening the “All Departments” floodgates.
+- **Unattended-friendly:** With `strategies.json` and `inputs.json` pre-seeded, the loop runs unattended; interactive prompts only fire when those files are absent or `--setup` is requested.
+
 ## Scoring philosophy
 
 The system uses explicit score bands:

@@ -8,23 +8,45 @@ OCR_PROMPT_DEFAULT = (
     "no summary. Return ONLY the plain text content of the CV."
 )
 
-STRATEGY_PROMPT = """You are an elite Executive Headhunter and Career Strategist.
-Analyze the candidate's CV text below. 
+# UPGRADED STRATEGY PROMPT
+STRATEGY_PROMPT = """You are an expert Headhunter and Search Algorithm Architect.
+Your goal is to translate the candidate's CV into a HIGH-RECALL search configuration for a specific job board.
 
-1. Classify the candidate's PRIMARY TARGET INDUSTRY (e.g. "Technology", "Finance", "Healthcare", "Manufacturing").
-2. Determine if the target roles fall under "Information Technology", "Software Engineering", "Data", or "Product" (Tech). Set 'is_tech_industry' to true if yes.
-3. Identify the 3-5 Highest Probability Job Titles this candidate should target.
-4. Draft a "Candidate Archetype" summary (2 sentences) explaining their unique value proposition and professional identity.
+THE PLATFORM RULES (HARD CONSTRAINTS):
+1. The search engine supports fuzzy keyword matching (e.g., "Head" matches "Head of Engineering", "Head of Data").
+2. The search engine filters by DEPARTMENTS. You MUST choose from the allowed list below.
 
-OUTPUT REQUIREMENTS:
-- Return STRICT JSON format.
-- Structure: 
+ALLOWED DEPARTMENTS LIST:
+[
+    "Engineering",
+    "Software Development",
+    "Information Technology",
+    "Data and Analytics",
+    "Product Management",
+    "Project and Program Management"
+]
+
+TASK:
+Analyze the CV and generate 1 to 3 distinct Search Strategies to uncover ALL relevant leadership opportunities.
+
+STRATEGY GUIDELINES:
+- **Keywords**: Use BROAD, high-level tokens.
+  - GOOD: "Head", "Director", "VP", "Principal", "Manager", "Lead", "CTO"
+  - BAD: "Head of Cloud Infrastructure for Fintech" (Too specific, will return 0 results).
+- **Exclusions**: critical to remove noise (e.g., if targeting "Manager" in "Product Management", exclude "Sales", "Marketing").
+- **Departments**: Select strictly from the ALLOWED LIST.
+
+OUTPUT:
+Return a STRICT JSON with the following structure:
 {
-  "industry": "Industry Name",
-  "is_tech_industry": true, 
-  "archetype": "Brief executive summary of the candidate's persona (e.g. 'Battle-hardened DevOps Director specializing in high-frequency trading platforms...')",
-  "suggestions": [ 
-    { "role": "Exact Job Title", "reason": "Why this fits" } 
+  "archetype": "Brief summary of the candidate (e.g. Senior Tech Executive)",
+  "strategies": [
+    {
+      "name": "Short descriptive name (e.g. 'Engineering Leadership')",
+      "roles": ["List", "of", "Broad", "Keywords"],
+      "exclusions": ["List", "of", "Noise", "Words"],
+      "departments": ["Exact", "Strings", "From", "Allowed", "List"]
+    }
   ]
 }
 

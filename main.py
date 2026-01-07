@@ -4,8 +4,15 @@ import os
 import sys
 import time
 from datetime import datetime
+from typing import List, Dict
 
-from hob_junter.config.settings import DEFAULT_CV_TEXT_PATH, LOCAL_LLM_URL, load_env_settings, load_run_settings
+from hob_junter.config.settings import (
+    DEFAULT_CV_TEXT_PATH, 
+    LOCAL_LLM_URL, 
+    load_env_settings, 
+    load_run_settings,
+    TARGET_DEPARTMENTS
+)
 from hob_junter.core.analyzer import (
     build_cv_profile,
     consult_career_advisor_gpt,
@@ -19,9 +26,6 @@ from hob_junter.core.reporter import export_jobs_html, send_telegram_message, su
 from hob_junter.core.scraper import (
     construct_search_url,
     fetch_jobs_via_browser,
-    input_exclusions_interactive,
-    parse_hiring_cafe_search_state_from_url,
-    select_roles_interactive,
 )
 from hob_junter.core.sheets import get_gspread_client, log_job_to_sheet 
 from hob_junter.utils.helpers import (
@@ -29,6 +33,79 @@ from hob_junter.utils.helpers import (
     print_phase_header,
     save_cv_profile_to_file,
 )
+
+
+def load_strategies(path: str) -> List[Dict]:
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[Error] Failed to load strategies: {e}")
+        return []
+
+
+def save_strategies(path: str, strategies: List[Dict]):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(strategies, f, indent=2)
+    print(f"[Config] Saved {len(strategies)} strategies to {path}")
+
+
+def interactive_setup_wizard(cv_profile_data: Dict, client, run_settings) -> List[Dict]:
+    print_phase_header(2, "STRATEGIC SETUP (AI ARCHITECT)")
+    
+    print("[Advisor] Analyzing CV against Hiring.Cafe taxonomy...")
+    cv_text_summary = json.dumps(cv_profile_data, indent=2)
+    
+    # Calls the new STRATEGY_PROMPT which returns "strategies" list
+    advisor_response = consult_career_advisor_gpt(client, cv_text_summary)
+    
+    archetype = advisor_response.get("archetype", "Candidate")
+    suggested_strategies = advisor_response.get("strategies", [])
+    
+    print(f"\n[Analysis] Candidate Archetype: \033[1m{archetype}\033[0m")
+    
+    final_strategies = []
+
+    # Review AI suggestions
+    if suggested_strategies:
+        print(f"[Advisor] Generated {len(suggested_strategies)} search configurations based on valid departments.")
+        
+        for i, strat in enumerate(suggested_strategies):
+            print(f"\n--- Strategy Option {i+1}: {strat['name']} ---")
+            print(f"    Keywords: {strat['roles']}")
+            print(f"    Exclusions: {strat['exclusions']}")
+            print(f"    Departments: {strat['departments']}")
+            
+            choice = input("    Keep this strategy? (Y/n/edit): ").strip().lower()
+            
+            if choice in ("n", "no"):
+                continue
+            elif choice == "edit":
+                # Simple edit mode if AI missed something
+                r_in = input(f"    New Keywords (current: {','.join(strat['roles'])}): ")
+                if r_in: strat['roles'] = [x.strip() for x in r_in.split(",")]
+                
+                e_in = input(f"    New Exclusions (current: {','.join(strat['exclusions'])}): ")
+                if e_in: strat['exclusions'] = [x.strip() for x in e_in.split(",")]
+                
+                final_strategies.append(strat)
+            else:
+                # Default YES
+                final_strategies.append(strat)
+
+    # Fallback / Manual Add
+    if not final_strategies:
+        print("\n[!] No AI strategies selected. Creating default fallback...")
+        final_strategies.append({
+            "name": "Broad Tech Leadership (Default)",
+            "roles": ["Head", "Director", "VP", "Manager", "Lead", "Chief", "CTO", "Principal"],
+            "exclusions": ["Sales", "Marketing", "HR", "Recruiter", "Intern", "Junior"],
+            "departments": TARGET_DEPARTMENTS # Using the constant from settings
+        })
+
+    return final_strategies
 
 
 async def run_pipeline():
@@ -52,12 +129,6 @@ async def run_pipeline():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_filename = f"jobs_{timestamp}.html"
-    print(f"\n[Init] Report will be saved to: {report_filename}")
-
-    with open(report_filename, "w") as f:
-        f.write(
-            f"<html><body><h1>Job Search Started: {timestamp}</h1><p>Waiting for matches...</p></body></html>"
-        )
 
     # Phase 1 - OCR / Cache
     print_phase_header(1, "CV INTELLIGENCE & OCR")
@@ -67,6 +138,7 @@ async def run_pipeline():
         cv_profile_json = load_cv_profile_from_json(run_settings.cv_path)
         cv_text_raw = cv_profile_json
     else:
+        # Cache logic same as before...
         use_cache = False
         cv_text_path = DEFAULT_CV_TEXT_PATH
 
@@ -86,79 +158,68 @@ async def run_pipeline():
             try:
                 with open(cv_text_path, "r", encoding="utf-8") as f:
                     cv_text_raw = f.read()
-            except Exception as exc:  # noqa: BLE001
-                print(f"[CV] Warning: Failed to read cached text: {exc}")
+            except Exception:
+                pass
         else:
             print("[CV] Extracting text from PDF (Fresh Run)...")
             cv_text_raw = extract_text_from_cv_pdf_with_gpt(client, run_settings.cv_path, run_settings.ocr_prompt)
-
-            try:
-                with open(cv_text_path, "w", encoding="utf-8") as f:
-                    f.write(cv_text_raw)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[CV] Warning: Failed to cache raw text: {exc}")
-
+            with open(cv_text_path, "w", encoding="utf-8") as f: f.write(cv_text_raw)
             print("[CV] Building profile...")
             cv_profile_json = build_cv_profile(client, cv_text_raw, run_settings.profile_prompt)
             save_cv_profile_to_file(cv_profile_json, run_settings.cv_profile_path)
 
     cv_profile_data = json.loads(cv_profile_json)
 
-    # Phase 2 - Strategy
-    print_phase_header(2, "STRATEGIC ALIGNMENT")
-    strategy_data = {}
-    search_url = run_settings.search_url
-
-    if not search_url:
-        print("[Advisor] Initializing strategic analysis...")
-        cv_text_for_strategy = cv_text_raw or json.dumps(cv_profile_data, indent=2)
-
-        advisor_response = consult_career_advisor_gpt(client, cv_text_for_strategy)
-
-        ai_suggestions = advisor_response.get("suggestions", [])
-        industry = advisor_response.get("industry", "Unknown")
-        is_tech_industry = advisor_response.get("is_tech_industry", False)
-
-        print(f"\n[Advisor] Detected Industry: {industry}")
-        final_roles = select_roles_interactive(ai_suggestions)
-        final_exclusions = input_exclusions_interactive()
-
-        strategy_data = {
-            "advisor_response": advisor_response,
-            "final_roles": final_roles,
-            "exclusions": final_exclusions,
-        }
-
-        search_url = construct_search_url(
-            final_roles, cv_profile_data.get("locations", []), is_tech_industry, final_exclusions
-        )
-        print(f"[Config] Generated URL: {search_url}")
-
-        if not search_url:
+    # Phase 2 - Strategy Loading / Setup
+    strategies = load_strategies(run_settings.strategies_path)
+    
+    # Check if we need to run setup
+    force_setup = "--setup" in sys.argv
+    if not strategies or force_setup:
+        print("\n[Config] No strategies found (or --setup flag used). Entering interactive setup...")
+        strategies = interactive_setup_wizard(cv_profile_data, client, run_settings)
+        if not strategies:
+            print("[Error] No strategies defined. Exiting.")
             return
+        save_strategies(run_settings.strategies_path, strategies)
+    else:
+        print(f"\n[Config] Loaded {len(strategies)} strategies from {run_settings.strategies_path}")
 
-    # Phase 3 - Parse & Scrape
-    print_phase_header(3, "DEPLOYING SCRAPERS (BROWSER AUTOMATION)")
-    try:
-        search_state = parse_hiring_cafe_search_state_from_url(search_url)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[Error] Invalid URL: {exc}")
-        return
+    # Generate URLs
+    print_phase_header(2, "STRATEGIC ALIGNMENT")
+    target_urls = []
+    
+    # We grab location from CV or default to Bulgaria inside construct_search_url
+    locations = cv_profile_data.get("locations", []) 
 
-    print("[Hiring] Starting browser automation...")
-    jobs = await fetch_jobs_via_browser(search_state, debug=debug)
+    for strat in strategies:
+        url = construct_search_url(
+            roles=strat["roles"],
+            locations=locations, # Currently ignored by construct_search_url in favor of hardcoded BG
+            departments=strat["departments"],
+            exclusions=strat["exclusions"]
+        )
+        print(f" [+] Strategy '{strat['name']}':")
+        print(f"     Roles: {strat['roles']}")
+        print(f"     Depts: {strat['departments']}")
+        print(f"     URL:   {url[:60]}...")
+        target_urls.append(url)
+
+    # Phase 3 - Scrape
+    print_phase_header(3, "DEPLOYING SCRAPERS (MULTI-STRATEGY)")
+    
+    # Pass LIST of URLs now
+    jobs = await fetch_jobs_via_browser(target_urls, debug=debug)
 
     if not jobs:
-        print("[Hiring] No jobs found.")
+        print("[Hiring] No jobs found across all strategies.")
         return
 
-    # Phase 4 - Score & Red Team
+    # Phase 4 - Score & Red Team (Same as before)
     print_phase_header(4, "SCORING & RED TEAM ANALYSIS")
-    valid_jobs = [j for j in jobs if j.apply_url and len(j.description) > 50]
+    valid_jobs = [j for j in jobs if j.apply_url] # Basic filter
     
-    # --- FILTERING LOGIC (UX FIX) ---
     print(f"[Pipeline] Syncing {len(valid_jobs)} jobs with Database...")
-    
     new_jobs = []
     known_count = 0
     
@@ -168,47 +229,29 @@ async def run_pipeline():
         else:
             new_jobs.append(job)
             
-    # --- REPORT STATS ---
     print(f"\n   [+] FEED:      {len(valid_jobs)} jobs found online.")
-    print(f"   [-] KNOWN:     {known_count} jobs skipped (Already in DB).")
+    print(f"   [-] KNOWN:     {known_count} jobs skipped.")
     print(f"   [!] NEW:       {len(new_jobs)} job(s) queued for analysis.\n")
     
     if not new_jobs:
-        print("[Summary] System is up to date. No new jobs to process.")
+        print("[Summary] System is up to date.")
         db_conn.close()
         return
 
-    print(f"[Pipeline] Processing {len(new_jobs)} new candidates...\n")
-
     scored = []
-    start_time = time.time()
-    total_new = len(new_jobs)
-    
     sheet_count = 0
+    
+    # Reuse strategy data structure for reporting
+    strategy_report_data = {
+        "advisor_response": {"archetype": "Multi-Strategy Execution"},
+        "final_roles": [r for s in strategies for r in s["roles"]], # Aggregate for display
+        "exclusions": [e for s in strategies for e in s["exclusions"]]
+    }
 
+    print(f"[Pipeline] Processing {len(new_jobs)} new candidates...\n")
+    
     for i, job in enumerate(new_jobs):
-        elapsed = time.time() - start_time
-        processed_count = i
-
-        if processed_count > 0:
-            avg_time_per_job = elapsed / processed_count
-            remaining_jobs = total_new - processed_count
-            est_remaining_seconds = avg_time_per_job * remaining_jobs
-            mins, secs = divmod(int(est_remaining_seconds), 60)
-            eta_str = f"{mins}m {secs}s"
-        else:
-            eta_str = "Calc..."
-
-        percent = ((i + 1) / total_new) * 100
-        bar_length = 25
-        filled_length = int(bar_length * (i + 1) // total_new)
-        bar = "=" * filled_length + "-" * (bar_length - filled_length)
-
-        comp_display = (job.company[:18] + "..") if len(job.company) > 18 else job.company
-
-        sys.stdout.write(
-            f"\r\033[K    [{bar}] {int(percent)}% ({i+1}/{total_new}) | ETA: {eta_str} | Scoring: {comp_display}"
-        )
+        sys.stdout.write(f"\r\033[K    Processing {i+1}/{len(new_jobs)}: {job.company[:20]}")
         sys.stdout.flush()
 
         score, reason = score_job_match(
@@ -222,10 +265,7 @@ async def run_pipeline():
 
         red_team_data = {}
         if score >= run_settings.threshold and cv_text_raw:
-            sys.stdout.write(f"\n\r\033[K   HIGH MATCH DETECTED ({score}/100): {job.company} - {job.title}\n")
-            sys.stdout.write("   [Red Team] Engaged... (This takes a moment)\n")
-            sys.stdout.flush()
-
+            sys.stdout.write(f"\n   HIGH MATCH ({score}): {job.title}\n")
             red_team_data = red_team_analysis(
                 cv_full_text=cv_text_raw, 
                 job=job, 
@@ -234,25 +274,18 @@ async def run_pipeline():
                 client=client
             )
 
-            sys.stdout.write("   [Red Team] Done.\n")
-
         scored.append((job, score, reason, red_team_data))
-
-        # -- DB SAVE --
         mark_job_as_processed(db_conn, job, score)
 
-        # -- SHEETS SAVE (REAL-TIME) --
         if sheets_client and score >= run_settings.threshold:
-            sys.stdout.write(f"   [Sheet] Logging to Google... ")
-            sys.stdout.flush()
             log_job_to_sheet(sheets_client, run_settings.spreadsheet_id, job, score, reason)
-            sys.stdout.write("Done.\n")
             sheet_count += 1
 
+        # Periodic save
         if (i + 1) % 5 == 0:
             good_matches_temp = [x for x in scored if x[1] >= run_settings.threshold]
             if good_matches_temp:
-                export_jobs_html(good_matches_temp, strategy_data, report_filename)
+                export_jobs_html(good_matches_temp, strategy_report_data, report_filename)
 
     print("\n\n[Pipeline] Scoring complete.")
     db_conn.close()
@@ -260,7 +293,7 @@ async def run_pipeline():
     good_matches = [x for x in scored if x[1] >= run_settings.threshold]
 
     if good_matches:
-        export_jobs_html(good_matches, strategy_data, report_filename)
+        export_jobs_html(good_matches, strategy_report_data, report_filename)
         send_telegram_message(
             summarize_jobs(good_matches),
             bot_token=env_settings.telegram_bot_token,
@@ -268,7 +301,7 @@ async def run_pipeline():
         )
         print(f"[Success] Report saved to {report_filename}")
         if sheets_client:
-            print(f"[Success] {sheet_count} high-scoring jobs logged to Google Sheets.")
+            print(f"[Success] {sheet_count} logged to Sheets.")
     else:
         print("No matches met the threshold.")
 

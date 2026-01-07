@@ -14,11 +14,21 @@ HIRING_BASE = "https://hiring.cafe"
 JOBS_ENDPOINT = f"{HIRING_BASE}/api/search-jobs"
 OPENAI_MODEL = "gpt-4o"
 CONFIG_FILE = "inputs.json"
+STRATEGIES_FILE = "strategies.json"  # <--- NEW: Strategy persistence
 DEFAULT_CV_PROFILE_PATH = "cv_profile.json"
 DEFAULT_CV_TEXT_PATH = "cv_full_text.txt"
 DEFAULT_DB_PATH = "jobs.db"
 DEFAULT_CREDS_PATH = "service_account.json"
 
+# THE GOLDEN LIST (Validated from Hiring.Cafe UI)
+TARGET_DEPARTMENTS = [
+    "Engineering",
+    "Software Development",
+    "Information Technology",
+    "Data and Analytics",
+    "Product Management",
+    "Project and Program Management"
+]
 
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").lower() in ("1", "true", "yes", "on")
@@ -34,7 +44,7 @@ class EnvSettings:
 @dataclass
 class RunSettings:
     cv_path: str
-    search_url: Optional[str]
+    search_url: Optional[str] # Kept for legacy compatibility
     spreadsheet_id: str
     threshold: int
     cv_profile_path: str
@@ -42,10 +52,11 @@ class RunSettings:
     profile_prompt: str
     score_prompt: str
     scoring_mode: str
-    red_team_mode: str  # <--- NEW FIELD
+    red_team_mode: str
     debug: bool
     db_path: str
     google_creds_path: str
+    strategies_path: str # <--- NEW
 
 
 def load_env_settings() -> EnvSettings:
@@ -83,10 +94,10 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
     profile_prompt = config.get("profile_prompt") or PROFILE_PROMPT_DEFAULT
     score_prompt = config.get("score_prompt") or SCORE_PROMPT_DEFAULT
     scoring_mode = config.get("scoring_mode") or "local"
-    # NEW: Default Red Team mode to Scoring mode if not set
     red_team_mode = config.get("red_team_mode") or scoring_mode
     db_path = config.get("db_path") or DEFAULT_DB_PATH
     google_creds_path = config.get("google_creds_path") or DEFAULT_CREDS_PATH
+    strategies_path = config.get("strategies_path") or STRATEGIES_FILE
 
     if not cv_path:
         cv_path = input("Path to CV PDF: ").strip()
@@ -110,9 +121,10 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         "profile_prompt": profile_prompt,
         "score_prompt": score_prompt,
         "scoring_mode": scoring_mode,
-        "red_team_mode": red_team_mode,  # <--- SAVE TO CONFIG
+        "red_team_mode": red_team_mode,
         "db_path": db_path,
         "google_creds_path": google_creds_path,
+        "strategies_path": strategies_path
     }
 
     try:
@@ -131,8 +143,9 @@ def load_run_settings(config_file: str = CONFIG_FILE) -> RunSettings:
         profile_prompt=profile_prompt,
         score_prompt=score_prompt,
         scoring_mode=scoring_mode,
-        red_team_mode=red_team_mode,  # <--- RETURN IN SETTINGS
+        red_team_mode=red_team_mode,
         debug=bool(debug_cfg),
         db_path=db_path,
         google_creds_path=google_creds_path,
+        strategies_path=strategies_path
     )
