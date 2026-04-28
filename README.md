@@ -1,6 +1,8 @@
 # Hob Junter  
 (ATS-flavored, mildly hostile)
 
+Local/cloud LLM job matcher that scores roles against CV evidence, deduplicates listings, red-teams strong matches, and exports review queues.
+
 This exists because manually browsing job boards is a form of quiet, socially accepted self-harm.
 
 ## What this is
@@ -210,3 +212,5 @@ It only reduces wasted time and cognitive load.
 
 If this makes you uncomfortable, that’s fine.  
 Hiring pipelines *should* feel a little uncomfortable when you start understanding them.
+
+Maintained by [Damyan Deshev](https://github.com/damyan-deshev) - local-first software, deterministic data paths, retrieval, evaluation, and practical product systems.
